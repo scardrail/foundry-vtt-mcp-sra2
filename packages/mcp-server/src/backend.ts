@@ -1378,6 +1378,12 @@ async function startBackend(): Promise<void> {
 
                   break;
 
+                case 'get-character-entity':
+
+                  result = await characterTools.handleGetCharacterEntity(args);
+
+                  break;
+
                 case 'list-characters':
 
                   result = await characterTools.handleListCharacters(args);
