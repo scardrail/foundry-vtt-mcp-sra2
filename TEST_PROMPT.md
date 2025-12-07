@@ -345,7 +345,8 @@ For any failures or warnings, include:
 
 ## Notes
 
-- Some tools require specific Foundry module handlers - if tools fail with "not implemented" errors, Phase 4 (module handlers) may be needed
+- All Foundry module handlers are fully implemented with permission checks and audit logging
 - Token IDs can be found by hovering over tokens in Foundry or using developer tools
 - Test in a non-critical game world to avoid data loss
 - The `delete-tokens` test should be done last to avoid removing needed test tokens
+- All token manipulation tools respect the "Allow Write Operations" setting in Foundry MCP Bridge module settings
