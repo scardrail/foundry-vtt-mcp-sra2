@@ -404,19 +404,19 @@ class PersistentCreatureIndex {
 
     // Listen for compendium document changes
     Hooks.on('createDocument', (document: any) => {
-      if (document.pack && (document.type === 'npc' || document.type === 'character')) {
+      if (document.pack && (document.type === 'npc' || document.type === 'character' || document.type === 'creature')) {
         this.invalidateIndex();
       }
     });
 
     Hooks.on('updateDocument', (document: any) => {
-      if (document.pack && (document.type === 'npc' || document.type === 'character')) {
+      if (document.pack && (document.type === 'npc' || document.type === 'character' || document.type === 'creature')) {
         this.invalidateIndex();
       }
     });
 
     Hooks.on('deleteDocument', (document: any) => {
-      if (document.pack && (document.type === 'npc' || document.type === 'character')) {
+      if (document.pack && (document.type === 'npc' || document.type === 'character' || document.type === 'creature')) {
         this.invalidateIndex();
       }
     });
@@ -672,8 +672,8 @@ class PersistentCreatureIndex {
       
       for (const doc of documents) {
         try {
-          // Only process NPCs and characters
-          if (doc.type !== 'npc' && doc.type !== 'character') {
+          // Only process NPCs, characters, and creatures
+          if (doc.type !== 'npc' && doc.type !== 'character' && doc.type !== 'creature') {
             continue;
           }
 
@@ -937,7 +937,8 @@ class PersistentCreatureIndex {
 
       for (const doc of documents) {
         try {
-          if (doc.type !== 'npc' && doc.type !== 'character') {
+          // Support NPCs, characters, and creatures
+          if (doc.type !== 'npc' && doc.type !== 'character' && doc.type !== 'creature') {
             continue;
           }
 
@@ -1360,8 +1361,8 @@ export class FoundryDataAccess {
    * Check if filters should be applied to this entry
    */
   private shouldApplyFilters(entry: any, filters: any): boolean {
-    // Only apply filters to Actor entries (which includes NPCs/monsters)
-    if (entry.type !== 'npc' && entry.type !== 'character') {
+    // Only apply filters to Actor entries (which includes NPCs/monsters/creatures)
+    if (entry.type !== 'npc' && entry.type !== 'character' && entry.type !== 'creature') {
       return false;
     }
     
@@ -2555,8 +2556,15 @@ export class FoundryDataAccess {
         throw new Error(`Document "${itemId}" not found in pack "${packId}"`);
       }
 
-      if (sourceDocument.type !== 'npc') {
-        throw new Error(`Document "${itemId}" is not an actor/NPC (type: ${sourceDocument.type})`);
+      // Validate that the document is an Actor (supports character, npc, creature, etc.)
+      if (sourceDocument.documentName !== 'Actor') {
+        throw new Error(`Document "${itemId}" is not an Actor (documentName: ${sourceDocument.documentName}, type: ${sourceDocument.type})`);
+      }
+
+      // Validate actor type - support all common actor types including DSA5 creatures
+      const validActorTypes = ['character', 'npc', 'creature'];
+      if (!validActorTypes.includes(sourceDocument.type)) {
+        throw new Error(`Document "${itemId}" has unsupported actor type: ${sourceDocument.type}. Supported types: ${validActorTypes.join(', ')}`);
       }
 
       const sourceActor = sourceDocument as Actor;

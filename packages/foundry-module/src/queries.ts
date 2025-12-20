@@ -83,8 +83,7 @@ export class QueryHandlers {
     CONFIG.queries[`${modulePrefix}.cancel-map-job`] = this.handleCancelMapJob.bind(this);
     CONFIG.queries[`${modulePrefix}.upload-generated-map`] = this.handleUploadGeneratedMap.bind(this);
 
-    // Phase 7: Character entity and token manipulation queries
-    CONFIG.queries[`${modulePrefix}.get-character-entity`] = this.handleGetCharacterEntity.bind(this);
+    // Phase 7: Token manipulation queries
     CONFIG.queries[`${modulePrefix}.move-token`] = this.handleMoveToken.bind(this);
     CONFIG.queries[`${modulePrefix}.update-token`] = this.handleUpdateToken.bind(this);
     CONFIG.queries[`${modulePrefix}.delete-tokens`] = this.handleDeleteTokens.bind(this);
@@ -1079,36 +1078,7 @@ export class QueryHandlers {
     }
   }
 
-  // ===== PHASE 7: CHARACTER ENTITY AND TOKEN MANIPULATION HANDLERS =====
-
-  /**
-   * Handle get character entity request
-   */
-  private async handleGetCharacterEntity(data: {
-    characterIdentifier: string;
-    entityIdentifier: string
-  }): Promise<any> {
-    try {
-      // SECURITY: Silent GM validation
-      const gmCheck = this.validateGMAccess();
-      if (!gmCheck.allowed) {
-        return { error: 'Access denied', success: false };
-      }
-
-      this.dataAccess.validateFoundryState();
-
-      if (!data.characterIdentifier) {
-        throw new Error('characterIdentifier is required');
-      }
-      if (!data.entityIdentifier) {
-        throw new Error('entityIdentifier is required');
-      }
-
-      return await this.dataAccess.getCharacterEntity(data);
-    } catch (error) {
-      throw new Error(`Failed to get character entity: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
+  // ===== PHASE 7: TOKEN MANIPULATION HANDLERS =====
 
   /**
    * Handle move token request
