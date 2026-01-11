@@ -77,11 +77,25 @@ export class QueryHandlers {
     CONFIG.queries[`${modulePrefix}.findPlayers`] = this.handleFindPlayers.bind(this);
     CONFIG.queries[`${modulePrefix}.findActor`] = this.handleFindActor.bind(this);
 
+    // Token manipulation queries
+    CONFIG.queries[`${modulePrefix}.moveToken`] = this.handleMoveToken.bind(this);
+    CONFIG.queries[`${modulePrefix}.updateToken`] = this.handleUpdateToken.bind(this);
+    CONFIG.queries[`${modulePrefix}.deleteTokens`] = this.handleDeleteTokens.bind(this);
+    CONFIG.queries[`${modulePrefix}.getTokenDetails`] = this.handleGetTokenDetails.bind(this);
+    CONFIG.queries[`${modulePrefix}.toggleTokenCondition`] = this.handleToggleTokenCondition.bind(this);
+    CONFIG.queries[`${modulePrefix}.getAvailableConditions`] = this.handleGetAvailableConditions.bind(this);
+
     // Map generation queries (hybrid architecture)
     CONFIG.queries[`${modulePrefix}.generate-map`] = this.handleGenerateMap.bind(this);
     CONFIG.queries[`${modulePrefix}.check-map-status`] = this.handleCheckMapStatus.bind(this);
     CONFIG.queries[`${modulePrefix}.cancel-map-job`] = this.handleCancelMapJob.bind(this);
     CONFIG.queries[`${modulePrefix}.upload-generated-map`] = this.handleUploadGeneratedMap.bind(this);
+
+    // Item usage queries
+    CONFIG.queries[`${modulePrefix}.useItem`] = this.handleUseItem.bind(this);
+
+    // Character search queries
+    CONFIG.queries[`${modulePrefix}.searchCharacterItems`] = this.handleSearchCharacterItems.bind(this);
 
     // Phase 7: Token manipulation queries
     CONFIG.queries[`${modulePrefix}.move-token`] = this.handleMoveToken.bind(this);

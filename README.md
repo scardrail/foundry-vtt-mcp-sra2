@@ -184,6 +184,5 @@ Claude Desktop ↔ MCP Protocol ↔ MCP Server ↔ WebSocket ↔ Foundry Module 
 
 - **Issues**: Report bugs on [GitHub Issues](https://github.com/adambdooley/foundry-vtt-mcp/issues)
 - **YouTube Channel**: [Subscribe for updates and tutorials](https://www.youtube.com/channel/UCVrSC-FzuAk5AgvfboJj0WA)
-- **Support Development**: [Support on Patreon](https://www.patreon.com/c/Adambdooley)
 - **Documentation**: Built with TypeScript, comprehensive documentation included
 - **License**: MIT License (Additional Third Party licenses are included for bundled components for the installers)
