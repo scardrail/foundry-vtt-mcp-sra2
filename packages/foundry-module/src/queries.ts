@@ -1252,4 +1252,80 @@ export class QueryHandlers {
     }
   }
 
+  /**
+   * Handle use item request (cast spell, use ability, consume item, etc.)
+   */
+  private async handleUseItem(data: {
+    actorIdentifier: string;
+    itemIdentifier: string;
+    targets?: string[];
+    options?: {
+      consume?: boolean;
+      configureDialog?: boolean;
+      spellLevel?: number;
+      versatile?: boolean;
+    };
+  }): Promise<any> {
+    try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
+      this.dataAccess.validateFoundryState();
+
+      if (!data.actorIdentifier) {
+        throw new Error('actorIdentifier is required');
+      }
+      if (!data.itemIdentifier) {
+        throw new Error('itemIdentifier is required');
+      }
+
+      return await this.dataAccess.useItem({
+        actorIdentifier: data.actorIdentifier,
+        itemIdentifier: data.itemIdentifier,
+        targets: data.targets,
+        options: data.options,
+      });
+    } catch (error) {
+      throw new Error(`Failed to use item: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Handle search character items request
+   */
+  private async handleSearchCharacterItems(data: {
+    characterIdentifier: string;
+    query?: string;
+    type?: string;
+    category?: string;
+    limit?: number;
+  }): Promise<any> {
+    try {
+      // SECURITY: Silent GM validation
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
+      this.dataAccess.validateFoundryState();
+
+      if (!data.characterIdentifier) {
+        throw new Error('characterIdentifier is required');
+      }
+
+      return await this.dataAccess.searchCharacterItems({
+        characterIdentifier: data.characterIdentifier,
+        query: data.query,
+        type: data.type,
+        category: data.category,
+        limit: data.limit,
+      });
+    } catch (error) {
+      throw new Error(`Failed to search character items: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
 }
