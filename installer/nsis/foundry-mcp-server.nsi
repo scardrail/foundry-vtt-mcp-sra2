@@ -984,7 +984,7 @@ Section "ComfyUI Map Generation" SecComfyUI
     FileWrite $6 '    throw "File not created"$\r$\n'
     FileWrite $6 '  }$\r$\n'
     FileWrite $6 '} catch {$\r$\n'
-    FileWrite $6 '  Write-Host "PowerShell download failed: $$($_.Exception.Message)"$\r$\n'
+    FileWrite $6 '  Write-Host "PowerShell download failed: $$($$_.Exception.Message)"$\r$\n'
     FileWrite $6 '  exit 1$\r$\n'
     FileWrite $6 '}$\r$\n'
     FileClose $6
