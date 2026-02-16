@@ -155,7 +155,7 @@ export class CompendiumTools {
       },
       {
         name: 'list-creatures-by-criteria',
-        description: 'MULTI-SYSTEM CREATURE DISCOVERY: Get a comprehensive list of creatures matching specific criteria. Supports D&D 5e (Challenge Rating) and Pathfinder 2e (Level) with automatic system detection. Perfect for encounter building - returns minimal data so Claude can use built-in monster knowledge to identify suitable creatures by name, then pull full details only for final selections. Features intelligent pack prioritization and high result limits for complete surveys.',
+        description: 'MULTI-SYSTEM CREATURE DISCOVERY: Get a comprehensive list of creatures matching specific criteria. Supports D&D 5e (Challenge Rating), Pathfinder 2e (Level), and Shadowrun Anarchy 2 (actor type: character, vehicle, ICE) with automatic system detection. Perfect for encounter building - returns minimal data so Claude can use built-in monster knowledge to identify suitable creatures by name, then pull full details only for final selections. Features intelligent pack prioritization and high result limits for complete surveys.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -521,7 +521,7 @@ export class CompendiumTools {
         criteria: params,
         searchSummary: {
           ...searchSummary,
-          searchStrategy: `Prioritized pack search - ${gameSystem === 'pf2e' ? 'PF2e' : 'D&D 5e'} content first, then modules, then campaign-specific`,
+          searchStrategy: `Prioritized pack search - ${gameSystem === 'pf2e' ? 'PF2e' : gameSystem === 'sra2' ? 'SRA2' : 'D&D 5e'} content first, then modules, then campaign-specific`,
           note: 'Packs searched in priority order to find most relevant creatures first'
         },
         optimizationNote: 'Use creature names to identify suitable options, then call get-compendium-item for final details only'
@@ -594,6 +594,7 @@ export class CompendiumTools {
 
       // Use system detection utilities for accurate stat extraction
       if (gameSystem) {
+        const system = item.system || {};
         // Level/CR (system-specific)
         const level = getCreatureLevel(item, gameSystem);
         if (level !== undefined) {
@@ -602,6 +603,13 @@ export class CompendiumTools {
           } else if (gameSystem === 'pf2e') {
             stats.level = level;
           }
+        }
+        // SRA2: actor type, essence, awakened
+        if (gameSystem === 'sra2') {
+          if (item.type) stats.actorType = item.type;
+          if (system.essence !== undefined) stats.essence = system.essence;
+          if (system.keywords) stats.keywords = system.keywords;
+          if (system.awakened && Object.keys(system.awakened).length > 0) stats.awakened = true;
         }
 
         // Creature type/traits
@@ -619,7 +627,6 @@ export class CompendiumTools {
         }
 
         // System-agnostic stats (similar paths in both systems)
-        const system = item.system || {};
 
         // Hit Points
         const hp = system.attributes?.hp?.value;
@@ -766,6 +773,16 @@ export class CompendiumTools {
           formatted.level = level;
         }
       }
+      // SRA2: actor type, essence, awakened
+      if (gameSystem === 'sra2') {
+        formatted.actorType = creature.type ?? system.type ?? 'character';
+        if (system.essence !== undefined) formatted.essence = system.essence;
+        if (system.keywords) formatted.keywords = system.keywords;
+        formatted.flags = {
+          spellcaster: hasSpellcasting(creature, gameSystem),
+          awakened: !!(system.awakened && Object.keys(system.awakened).length > 0)
+        };
+      }
 
       const creatureType = getCreatureType(creature, gameSystem);
       if (creatureType) {
@@ -789,11 +806,11 @@ export class CompendiumTools {
         if (rarity) formatted.rarity = rarity;
       }
 
-      // Feature flags
-      const hasSpells = hasSpellcasting(creature, gameSystem);
-      formatted.flags = {
-        spellcaster: hasSpells
-      };
+      // Feature flags (sra2 set above)
+      if (gameSystem !== 'sra2') {
+        const hasSpells = hasSpellcasting(creature, gameSystem);
+        formatted.flags = { spellcaster: hasSpells };
+      }
 
       // D&D 5e specific flags
       if (gameSystem === 'dnd5e') {
@@ -858,6 +875,10 @@ export class CompendiumTools {
           parts.push(`Level ${min}-${max}`);
         }
       }
+    } else if (gameSystem === 'sra2') {
+      if (params.actorType) parts.push(params.actorType);
+      if (params.hasAwakened) parts.push('awakened');
+      if (params.keyword) parts.push(`keyword: ${params.keyword}`);
     }
 
     if (params.creatureType) parts.push(params.creatureType);

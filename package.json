@@ -1,7 +1,7 @@
 {
-  "name": "foundry-mcp-integration",
+  "name": "foundry-vtt-mcp-sra2",
   "version": "0.6.3",
-  "description": "MCP server that bridges Foundry VTT game data with Claude Desktop",
+  "description": "MCP server that bridges Foundry VTT game data with Claude Desktop. Fork with Shadowrun Anarchy 2 (SRA2) support alongside D&D 5e and Pathfinder 2e.",
   "private": true,
   "workspaces": [
     "packages/*",
@@ -51,6 +51,10 @@
   "author": "Adam Dooley",
   "license": "MIT",
   "repository": {
+    "type": "git",
+    "url": "https://github.com/scardrail/foundry-vtt-mcp-sra2.git"
+  },
+  "originalRepository": {
     "type": "git",
     "url": "https://github.com/adambdooley/foundry-vtt-mcp.git"
   },

@@ -114,15 +114,31 @@ interface PF2eCreatureIndex {
   img?: string;
 }
 
-// Union type for both systems
-type EnhancedCreatureIndex = DnD5eCreatureIndex | PF2eCreatureIndex;
+// Shadowrun Anarchy 2 Enhanced Creature Index (character, vehicle, drone, ICE)
+interface SRA2CreatureIndex {
+  id: string;
+  name: string;
+  type: string;
+  pack: string;
+  packLabel: string;
+  actorType: string;
+  essence?: number;
+  keywords?: string[];
+  hasAwakened: boolean;
+  hasSpells: boolean;
+  description?: string;
+  img?: string;
+}
+
+// Union type for all supported systems
+type EnhancedCreatureIndex = DnD5eCreatureIndex | PF2eCreatureIndex | SRA2CreatureIndex;
 
 interface PersistentIndexMetadata {
   version: string;
   timestamp: number;
   packFingerprints: Map<string, PackFingerprint>;
   totalCreatures: number;
-  gameSystem: string;  // 'dnd5e' or 'pf2e'
+  gameSystem: string;  // 'dnd5e', 'pf2e', or 'sra2'
 }
 
 interface PackFingerprint {
@@ -554,8 +570,10 @@ class PersistentCreatureIndex {
       return await this.buildPF2eIndex(force);
     } else if (gameSystem === 'dnd5e') {
       return await this.buildDnD5eIndex(force);
+    } else if (gameSystem === 'sra2') {
+      return await this.buildSRA2Index(force);
     } else {
-      throw new Error(`Enhanced creature index not supported for system: ${gameSystem}. Only D&D 5e and Pathfinder 2e are currently supported.`);
+      throw new Error(`Enhanced creature index not supported for system: ${gameSystem}. Only D&D 5e, Pathfinder 2e, and Shadowrun Anarchy 2 are currently supported.`);
     }
   }
 
@@ -1090,6 +1108,179 @@ class PersistentCreatureIndex {
           armorClass: 10,
           hasSpells: false,
           alignment: 'N',
+          description: 'Data extraction failed',
+          img: doc.img || ''
+        },
+        errors: 1
+      };
+    }
+  }
+
+  /**
+   * Build Shadowrun Anarchy 2 enhanced creature index
+   */
+  private async buildSRA2Index(_force = false): Promise<SRA2CreatureIndex[]> {
+    this.buildInProgress = true;
+
+    const startTime = Date.now();
+    let progressNotification: any = null;
+    let totalErrors = 0;
+
+    try {
+      const actorPacks = Array.from(game.packs.values()).filter(pack => pack.metadata.type === 'Actor');
+      const enhancedCreatures: SRA2CreatureIndex[] = [];
+      const packFingerprints = new Map<string, PackFingerprint>();
+
+      ui.notifications?.info(`Starting SRA2 creature index build from ${actorPacks.length} packs...`);
+
+      let currentPack = 0;
+      for (const pack of actorPacks) {
+        currentPack++;
+
+        if (progressNotification) {
+          progressNotification.remove();
+        }
+        progressNotification = ui.notifications?.info(
+          `Building SRA2 index: Pack ${currentPack}/${actorPacks.length} (${pack.metadata.label})...`
+        );
+
+        const fingerprint = await this.generatePackFingerprint(pack);
+        packFingerprints.set(pack.metadata.id, fingerprint);
+
+        const result = await this.extractSRA2DataFromPack(pack);
+        enhancedCreatures.push(...result.creatures);
+        totalErrors += result.errors;
+      }
+
+      if (progressNotification) {
+        progressNotification.remove();
+      }
+      ui.notifications?.info(`Saving SRA2 index to world database... (${enhancedCreatures.length} creatures)`);
+
+      const persistentIndex: PersistentEnhancedIndex = {
+        metadata: {
+          version: this.INDEX_VERSION,
+          timestamp: Date.now(),
+          packFingerprints,
+          totalCreatures: enhancedCreatures.length,
+          gameSystem: 'sra2'
+        },
+        creatures: enhancedCreatures
+      };
+
+      await this.savePersistedIndex(persistentIndex);
+
+      const buildTimeSeconds = Math.round((Date.now() - startTime) / 1000);
+      const errorText = totalErrors > 0 ? ` (${totalErrors} extraction errors)` : '';
+      const successMessage = `SRA2 creature index complete! ${enhancedCreatures.length} creatures indexed from ${actorPacks.length} packs in ${buildTimeSeconds}s${errorText}`;
+
+      ui.notifications?.info(successMessage);
+
+      return enhancedCreatures;
+
+    } catch (error) {
+      if (progressNotification) {
+        progressNotification.remove();
+      }
+
+      const errorMessage = `Failed to build SRA2 creature index: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      console.error(`[${this.moduleId}] ${errorMessage}`);
+      ui.notifications?.error(errorMessage);
+
+      throw error;
+
+    } finally {
+      this.buildInProgress = false;
+
+      if (progressNotification) {
+        progressNotification.remove();
+      }
+    }
+  }
+
+  /**
+   * Extract SRA2 creature data from all documents in a pack
+   */
+  private async extractSRA2DataFromPack(pack: any): Promise<{ creatures: SRA2CreatureIndex[], errors: number }> {
+    const creatures: SRA2CreatureIndex[] = [];
+    let errors = 0;
+
+    try {
+      const documents = await pack.getDocuments();
+
+      for (const doc of documents) {
+        try {
+          // SRA2 actor types: character, vehicle, ice (and possibly drone)
+          const type = (doc.type || '').toLowerCase();
+          if (type !== 'character' && type !== 'vehicle' && type !== 'ice' && type !== 'npc') {
+            continue;
+          }
+
+          const result = this.extractSRA2CreatureData(doc, pack);
+          if (result) {
+            creatures.push(result.creature);
+            errors += result.errors;
+          }
+
+        } catch (error) {
+          console.warn(`[${this.moduleId}] Failed to extract SRA2 data from ${doc.name} in ${pack.metadata.label}:`, error);
+          errors++;
+        }
+      }
+
+    } catch (error) {
+      console.warn(`[${this.moduleId}] Failed to load documents from ${pack.metadata.label}:`, error);
+      errors++;
+    }
+
+    return { creatures, errors };
+  }
+
+  /**
+   * Extract Shadowrun Anarchy 2 creature data from a single document
+   */
+  private extractSRA2CreatureData(doc: any, pack: any): { creature: SRA2CreatureIndex, errors: number } | null {
+    try {
+      const system = doc.system || {};
+
+      const actorType = doc.type || 'character';
+      const essence = system.essence;
+      const keywords = Array.isArray(system.keywords) ? system.keywords : (system.keywords ? [system.keywords] : []);
+      const awakened = system.awakened || {};
+      const hasAwakened = typeof awakened === 'object' && Object.keys(awakened).length > 0;
+      const hasSpells = !!(system.awakened?.sorcery || system.awakened?.spells || (system.spells && system.spells.length > 0));
+
+      return {
+        creature: {
+          id: doc._id,
+          name: doc.name,
+          type: doc.type,
+          pack: pack.metadata.id,
+          packLabel: pack.metadata.label,
+          actorType,
+          ...(essence !== undefined && essence !== null ? { essence: Number(essence) } : {}),
+          ...(keywords.length > 0 ? { keywords } : {}),
+          hasAwakened,
+          hasSpells,
+          description: system.details?.publicNotes || system.details?.biography || '',
+          img: doc.img
+        },
+        errors: 0
+      };
+
+    } catch (error) {
+      console.warn(`[${this.moduleId}] Failed to extract SRA2 data from ${doc.name}:`, error);
+
+      return {
+        creature: {
+          id: doc._id,
+          name: doc.name,
+          type: doc.type,
+          pack: pack.metadata.id,
+          packLabel: pack.metadata.label,
+          actorType: doc.type || 'character',
+          hasAwakened: false,
+          hasSpells: false,
           description: 'Data extraction failed',
           img: doc.img || ''
         },
@@ -2368,9 +2559,9 @@ export class FoundryDataAccess {
 
       // Sort by Level/CR then name for consistent ordering (system-aware)
       filteredCreatures.sort((a, b) => {
-        // Get power level (CR for D&D 5e, Level for PF2e)
-        const powerA = 'level' in a ? (a as PF2eCreatureIndex).level : (a as DnD5eCreatureIndex).challengeRating;
-        const powerB = 'level' in b ? (b as PF2eCreatureIndex).level : (b as DnD5eCreatureIndex).challengeRating;
+        // Get power level (CR for D&D 5e, Level for PF2e; SRA2 has none)
+        const powerA = 'level' in a ? (a as PF2eCreatureIndex).level : 'challengeRating' in a ? (a as DnD5eCreatureIndex).challengeRating : 0;
+        const powerB = 'level' in b ? (b as PF2eCreatureIndex).level : 'challengeRating' in b ? (b as DnD5eCreatureIndex).challengeRating : 0;
 
         if (powerA !== powerB) {
           return powerA - powerB; // Lower power first
@@ -2385,8 +2576,34 @@ export class FoundryDataAccess {
 
       // Convert enhanced creatures to result format (system-aware)
       const results = filteredCreatures.map(creature => {
-        // Type guard for result formatting
+        // Type guards for result formatting
         const isPF2e = 'level' in creature;
+        const isSRA2 = 'actorType' in creature;
+
+        const summary = isSRA2
+          ? `${(creature as SRA2CreatureIndex).actorType} from ${creature.packLabel}`
+          : isPF2e
+            ? `Level ${(creature as PF2eCreatureIndex).level} ${(creature as PF2eCreatureIndex).creatureType} (${(creature as PF2eCreatureIndex).rarity}) from ${creature.packLabel}`
+            : `CR ${(creature as DnD5eCreatureIndex).challengeRating} ${(creature as DnD5eCreatureIndex).creatureType} from ${creature.packLabel}`;
+
+        const systemData = isSRA2
+          ? {
+              actorType: (creature as SRA2CreatureIndex).actorType,
+              essence: (creature as SRA2CreatureIndex).essence,
+              hasAwakened: (creature as SRA2CreatureIndex).hasAwakened,
+              hasSpells: (creature as SRA2CreatureIndex).hasSpells,
+              keywords: (creature as SRA2CreatureIndex).keywords
+            }
+          : isPF2e
+            ? {
+                level: (creature as PF2eCreatureIndex).level,
+                traits: (creature as PF2eCreatureIndex).traits,
+                rarity: (creature as PF2eCreatureIndex).rarity
+              }
+            : {
+                challengeRating: (creature as DnD5eCreatureIndex).challengeRating,
+                hasLegendaryActions: (creature as DnD5eCreatureIndex).hasLegendaryActions
+              };
 
         return {
           id: creature.id,
@@ -2396,28 +2613,14 @@ export class FoundryDataAccess {
           packLabel: creature.packLabel,
           description: creature.description || '',
           hasImage: !!creature.img,
-
-          // System-aware summary
-          summary: isPF2e
-            ? `Level ${(creature as PF2eCreatureIndex).level} ${creature.creatureType} (${(creature as PF2eCreatureIndex).rarity}) from ${creature.packLabel}`
-            : `CR ${(creature as DnD5eCreatureIndex).challengeRating} ${creature.creatureType} from ${creature.packLabel}`,
-
-          // Include all creature data (conditional based on system)
-          ...(isPF2e ? {
-            level: (creature as PF2eCreatureIndex).level,
-            traits: (creature as PF2eCreatureIndex).traits,
-            rarity: (creature as PF2eCreatureIndex).rarity
-          } : {
-            challengeRating: (creature as DnD5eCreatureIndex).challengeRating,
-            hasLegendaryActions: (creature as DnD5eCreatureIndex).hasLegendaryActions
-          }),
-
-          creatureType: creature.creatureType,
-          size: creature.size,
-          hitPoints: creature.hitPoints,
-          armorClass: creature.armorClass,
+          summary,
+          ...systemData,
+          creatureType: 'creatureType' in creature ? (creature as DnD5eCreatureIndex | PF2eCreatureIndex).creatureType : (creature as SRA2CreatureIndex).actorType,
+          size: 'size' in creature ? (creature as DnD5eCreatureIndex | PF2eCreatureIndex).size : undefined,
+          hitPoints: 'hitPoints' in creature ? (creature as DnD5eCreatureIndex | PF2eCreatureIndex).hitPoints : undefined,
+          armorClass: 'armorClass' in creature ? (creature as DnD5eCreatureIndex | PF2eCreatureIndex).armorClass : undefined,
           hasSpells: creature.hasSpells,
-          alignment: creature.alignment
+          alignment: 'alignment' in creature ? (creature as DnD5eCreatureIndex | PF2eCreatureIndex).alignment : undefined
         };
       });
 

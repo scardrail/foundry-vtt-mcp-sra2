@@ -11,7 +11,7 @@ import { Logger } from '../logger.js';
 /**
  * Supported game systems
  */
-export type GameSystem = 'dnd5e' | 'pf2e' | 'other';
+export type GameSystem = 'dnd5e' | 'pf2e' | 'sra2' | 'other';
 
 /**
  * Cache for system detection (avoid repeated queries)
@@ -38,6 +38,8 @@ export async function detectGameSystem(foundryClient: FoundryClient, logger?: Lo
       cachedSystem = 'dnd5e';
     } else if (systemId === 'pf2e') {
       cachedSystem = 'pf2e';
+    } else if (systemId === 'sra2') {
+      cachedSystem = 'sra2';
     } else {
       cachedSystem = 'other';
     }
@@ -107,6 +109,23 @@ export const SystemPaths = {
     // PF2e doesn't have CR or legendary actions
     challengeRating: null,
     legendaryActions: null
+  },
+  sra2: {
+    // Shadowrun Anarchy 2: character, vehicle, drone, ICE
+    level: null,
+    creatureType: null,
+    size: null,
+    alignment: null,
+    rarity: null,
+    traits: 'system.keywords',
+    hitPoints: 'system.attributes.physical',
+    armorClass: null,
+    abilities: 'system.attributes',
+    skills: 'system.skills',
+    perception: null,
+    saves: null,
+    challengeRating: null,
+    legendaryActions: null
   }
 } as const;
 
@@ -118,6 +137,8 @@ export function getSystemPaths(system: GameSystem) {
     return SystemPaths.dnd5e;
   } else if (system === 'pf2e') {
     return SystemPaths.pf2e;
+  } else if (system === 'sra2') {
+    return SystemPaths.sra2;
   }
   // Default to dnd5e paths for unknown systems (best effort)
   return SystemPaths.dnd5e;
@@ -164,6 +185,7 @@ export function getCreatureLevel(actorData: any, system: GameSystem): number | u
     const level = extractSystemValue(actorData, paths.level);
     if (level !== undefined) return Number(level);
   }
+  // SRA2: no CR/level equivalent
 
   return undefined;
 }
@@ -179,6 +201,9 @@ export function getCreatureType(actorData: any, system: GameSystem): string | st
     // PF2e: Array of traits
     const traits = extractSystemValue(actorData, SystemPaths.pf2e.traits);
     return Array.isArray(traits) ? traits : undefined;
+  } else if (system === 'sra2') {
+    // SRA2: actor type (character, vehicle, etc.)
+    return actorData.type ?? undefined;
   }
 
   return undefined;
@@ -197,6 +222,10 @@ export function hasSpellcasting(actorData: any, system: GameSystem): boolean {
     // PF2e: Check for spellcasting entries
     const spellcasting = extractSystemValue(actorData, 'system.spellcasting');
     return spellcasting && Object.keys(spellcasting).length > 0;
+  } else if (system === 'sra2') {
+    // SRA2: Awakened (sorcery, conjuration, adept)
+    const awakened = extractSystemValue(actorData, 'system.awakened');
+    return !!(awakened && Object.keys(awakened).length > 0);
   }
 
   return false;
@@ -207,7 +236,7 @@ export function hasSpellcasting(actorData: any, system: GameSystem): boolean {
  */
 export function formatSystemError(system: GameSystem, systemId: string | null): string {
   if (system === 'other') {
-    return `This tool currently supports D&D 5e and Pathfinder 2e. Your world uses system: "${systemId || 'unknown'}". Please use a supported system or request support for additional systems.`;
+    return `This tool currently supports D&D 5e, Pathfinder 2e, and Shadowrun Anarchy 2. Your world uses system: "${systemId || 'unknown'}". Please use a supported system or request support for additional systems.`;
   }
   return 'Unknown system error';
 }

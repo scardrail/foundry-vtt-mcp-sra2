@@ -1,12 +1,13 @@
 /**
  * Compendium Search Filter Schemas
  *
- * Defines filter schemas for different game systems (D&D 5e, Pathfinder 2e)
+ * Defines filter schemas for different game systems (D&D 5e, Pathfinder 2e, SRA2)
  * to enable system-specific creature/actor searches.
  */
 
 import { z } from 'zod';
 import type { GameSystem } from './system-detection.js';
+import { SRA2FiltersSchema, SRA2ActorTypes } from '../systems/sra2/filters.js';
 
 /**
  * D&D 5e creature types
@@ -140,7 +141,12 @@ export const GenericFiltersSchema = z.object({
   // Spellcasting flags (different names per system)
   hasLegendaryActions: z.boolean().optional(), // D&D 5e specific
   spellcaster: z.boolean().optional(), // D&D 5e terminology
-  hasSpells: z.boolean().optional() // PF2e terminology
+  hasSpells: z.boolean().optional(), // PF2e terminology
+
+  // SRA2 (Shadowrun Anarchy 2) fields
+  actorType: z.enum(SRA2ActorTypes).optional(),
+  hasAwakened: z.boolean().optional(),
+  keyword: z.string().optional()
 });
 
 export type GenericFilters = z.infer<typeof GenericFiltersSchema>;
@@ -153,6 +159,8 @@ export function getFilterSchema(system: GameSystem) {
     return DnD5eFiltersSchema;
   } else if (system === 'pf2e') {
     return PF2eFiltersSchema;
+  } else if (system === 'sra2') {
+    return SRA2FiltersSchema;
   }
   // For unknown systems, use generic schema (best effort)
   return GenericFiltersSchema;
@@ -166,6 +174,8 @@ export function isValidCreatureType(creatureType: string, system: GameSystem): b
     return DnD5eCreatureTypes.includes(creatureType as DnD5eCreatureType);
   } else if (system === 'pf2e') {
     return PF2eCreatureTypes.includes(creatureType as PF2eCreatureType);
+  } else if (system === 'sra2') {
+    return SRA2ActorTypes.includes(creatureType as typeof SRA2ActorTypes[number]);
   }
   return false;
 }
@@ -207,6 +217,13 @@ export function convertFilters(filters: GenericFilters, fromSystem: GameSystem, 
     }
 
     // Remove PF2e specific fields
+    delete converted.traits;
+    delete converted.rarity;
+  } else if (fromSystem === 'sra2' || toSystem === 'sra2') {
+    // SRA2: keep actorType, hasAwakened, keyword; no CR/level conversion
+    delete converted.challengeRating;
+    delete converted.level;
+    delete converted.hasLegendaryActions;
     delete converted.traits;
     delete converted.rarity;
   }
@@ -255,6 +272,11 @@ export function describeFilters(filters: GenericFilters, system: GameSystem): st
       parts.push(`traits: ${filters.traits.join(', ')}`);
     }
     if (filters.hasSpells) parts.push('spellcaster');
+  } else if (system === 'sra2') {
+    if (filters.actorType) parts.push(filters.actorType);
+    if (filters.hasAwakened) parts.push('awakened');
+    if (filters.hasSpells) parts.push('spellcaster');
+    if (filters.keyword) parts.push(`keyword: ${filters.keyword}`);
   }
 
   return parts.length > 0 ? parts.join(', ') : 'no filters';

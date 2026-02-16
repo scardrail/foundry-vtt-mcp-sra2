@@ -11,7 +11,7 @@ import { z } from 'zod';
  * Supported game system identifiers
  * Extend this type when adding new systems
  */
-export type SystemId = 'dnd5e' | 'pf2e' | 'dsa5' | 'other';
+export type SystemId = 'dnd5e' | 'pf2e' | 'dsa5' | 'sra2' | 'other';
 
 /**
  * System metadata returned by adapters
@@ -222,6 +222,21 @@ export interface DSA5CreatureIndex extends SystemCreatureIndex {
 }
 
 /**
+ * SRA2 (Shadowrun Anarchy 2) specific creature index structure
+ * Actor types: character, vehicle, drone, ICE
+ */
+export interface SRA2CreatureIndex extends SystemCreatureIndex {
+  system: 'sra2';
+  systemData: {
+    actorType?: string; // character, vehicle, drone, ice
+    keywords?: string[];
+    essence?: number;
+    hasAwakened?: boolean; // magical/matrix abilities
+    hasSpells?: boolean;
+  };
+}
+
+/**
  * Generic creature index for unsupported systems
  */
 export interface GenericCreatureIndex extends SystemCreatureIndex {
@@ -232,4 +247,4 @@ export interface GenericCreatureIndex extends SystemCreatureIndex {
 /**
  * Union type of all creature index types
  */
-export type AnyCreatureIndex = DnD5eCreatureIndex | PF2eCreatureIndex | DSA5CreatureIndex | GenericCreatureIndex;
+export type AnyCreatureIndex = DnD5eCreatureIndex | PF2eCreatureIndex | DSA5CreatureIndex | SRA2CreatureIndex | GenericCreatureIndex;
