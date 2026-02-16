@@ -32,6 +32,7 @@ export class QueryHandlers {
     CONFIG.queries[`${modulePrefix}.getCharacterInfo`] = this.handleGetCharacterInfo.bind(this);
     CONFIG.queries[`${modulePrefix}.exportActorFull`] = this.handleExportActorFull.bind(this);
     CONFIG.queries[`${modulePrefix}.exportAllActorsFull`] = this.handleExportAllActorsFull.bind(this);
+    CONFIG.queries[`${modulePrefix}.importActorsFromAnarchyExport`] = this.handleImportActorsFromAnarchyExport.bind(this);
     CONFIG.queries[`${modulePrefix}.listActors`] = this.handleListActors.bind(this);
 
     // Compendium queries
@@ -190,6 +191,17 @@ export class QueryHandlers {
     if (!gmCheck.allowed) throw new Error('Access denied');
     this.dataAccess.validateFoundryState();
     return await this.dataAccess.exportAllActorsFull();
+  }
+
+  /**
+   * Handle import actors from Anarchy v1 export JSON (converted to SRA2 per guide B5).
+   */
+  private async handleImportActorsFromAnarchyExport(data: { jsonContent: string; baseFolderPath?: string }): Promise<{ imported: number; errors: string[]; details: Array<{ name: string; id: string; folderPath: string }> }> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) throw new Error('Access denied');
+    const payload: { jsonContent: string; baseFolderPath?: string } = { jsonContent: data.jsonContent };
+    if (data.baseFolderPath !== undefined) payload.baseFolderPath = data.baseFolderPath;
+    return await this.dataAccess.importActorsFromAnarchyExport(payload);
   }
 
   /**

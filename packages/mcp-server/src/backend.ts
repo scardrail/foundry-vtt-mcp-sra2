@@ -1527,6 +1527,12 @@ async function startBackend(): Promise<void> {
 
                   break;
 
+                case 'import-actors-from-anarchy-export':
+
+                  result = await actorCreationTools.handleImportActorsFromAnarchyExport(args);
+
+                  break;
+
                 // DSA5 character creation tools
 
                 case 'create-dsa5-character-from-archetype':

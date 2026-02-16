@@ -1343,8 +1343,14 @@ export class FoundryDataAccess {
 
   /**
    * Export all actors in the world as full JSON-serializable data (no filters).
+   * Also exports folders (id, name, parent) so import can respect folder paths.
    */
-  async exportAllActorsFull(): Promise<{ exportedAt: string; world: { id: string; title: string }; actors: Record<string, unknown>[] }> {
+  async exportAllActorsFull(): Promise<{
+    exportedAt: string;
+    world: { id: string; title: string };
+    actors: Record<string, unknown>[];
+    folders?: Array<{ id: string; name: string; parent: string | null }>;
+  }> {
     this.validateFoundryState();
     const world = (game as any).world;
     const actors = (game as any).actors?.contents ?? [];
@@ -1357,11 +1363,31 @@ export class FoundryDataAccess {
         exported.push({ id: (actor as any).id, name: (actor as any).name, type: (actor as any).type, _exportError: 'toObject failed' });
       }
     }
-    return {
+    const folders: Array<{ id: string; name: string; parent: string | null }> = [];
+    const folderCollection = (game as any).folders;
+    if (folderCollection?.contents) {
+      for (const f of folderCollection.contents) {
+        if (f.type === 'Actor') {
+          folders.push({
+            id: f.id,
+            name: f.name ?? '',
+            parent: f.parent ?? null,
+          });
+        }
+      }
+    }
+    const result: {
+      exportedAt: string;
+      world: { id: string; title: string };
+      actors: Record<string, unknown>[];
+      folders?: Array<{ id: string; name: string; parent: string | null }>;
+    } = {
       exportedAt: new Date().toISOString(),
       world: { id: world?.id ?? '', title: world?.title ?? '' },
       actors: exported,
     };
+    if (folders.length) result.folders = folders;
+    return result;
   }
 
   /**
@@ -3984,6 +4010,215 @@ export class FoundryDataAccess {
     await actor.update({ 'system.bio.background': html });
     this.auditLog('updateSRA2ActorBiography', { actorId }, 'success');
     return { id: actor.id, name: actor.name };
+  }
+
+  /**
+   * Convert Anarchy v1 attribute value to Anarchy 2.0 scale (guide B5: 1→1, 2-3→2, 4-5→3, 6→4, 7-8→5, 9+→6).
+   */
+  private anarchyAttributeToSra2(value: number): number {
+    const v = Number(value);
+    if (v <= 1) return 1;
+    if (v <= 3) return 2;
+    if (v <= 5) return 3;
+    if (v <= 6) return 4;
+    if (v <= 8) return 5;
+    return 6;
+  }
+
+  /**
+   * Build folder path string from export folders array (id → path). Returns null if not found.
+   */
+  private buildFolderPathFromExport(folders: Array<{ id: string; name: string; parent: string | null }>, folderId: string): string | null {
+    if (!folderId || !folders?.length) return null;
+    const byId = new Map<string, { id: string; name: string; parent: string | null }>();
+    for (const f of folders) byId.set(f.id, f);
+    const parts: string[] = [];
+    let current: typeof folders[0] | undefined = byId.get(folderId);
+    while (current) {
+      parts.unshift(current.name);
+      current = current.parent ? byId.get(current.parent) : undefined;
+    }
+    return parts.length ? parts.join('/') : null;
+  }
+
+  /**
+   * Convert one Anarchy (v1) item to SRA2 item data (no _id/folder). Guide B5: skills, traits, weapons, contacts, etc.
+   */
+  private convertAnarchyItemToSra2(item: any): { type: string; name: string; img?: string; system: Record<string, unknown> } {
+    const name = (item.name ?? 'Sans nom').trim() || 'Sans nom';
+    const sys = item.system && typeof item.system === 'object' ? { ...item.system } : {};
+    const type = String(item.type ?? '').toLowerCase();
+
+    switch (type) {
+      case 'skill': {
+        const value = sys.value != null ? this.anarchyAttributeToSra2(Number(sys.value)) : 0;
+        return { type: 'skill', name, img: item.img, system: { value, attribute: sys.attribute ?? 'agility', description: sys.description } };
+      }
+      case 'metatype':
+        return { type: 'metatype', name, img: item.img, system: { description: sys.description ?? '' } };
+      case 'weapon': {
+        const featType = 'weapon';
+        const damage = sys.damage ?? 0;
+        const range = sys.range ?? { max: 'short', short: 0, medium: 0, long: 0 };
+        return { type: 'feat', name, img: item.img, system: { featType, description: sys.description ?? '', damage, range, skill: sys.skill, damageAttribute: sys.damageAttribute } };
+      }
+      case 'shadowamp':
+        return { type: 'feat', name, img: item.img, system: { featType: (sys.category === 'awakened' || sys.capacity === 'awakened') ? 'awakened' : 'trait', description: sys.description ?? '', level: sys.level, essence: sys.essence } };
+      case 'gear':
+        return { type: 'feat', name, img: item.img, system: { featType: 'equipment', description: sys.description ?? '' } };
+      case 'contact':
+        return { type: 'feat', name, img: item.img, system: { featType: 'contact', description: sys.description ?? '' } };
+      case 'quality':
+        return { type: 'feat', name, img: item.img, system: { featType: 'trait', description: sys.description ?? '' } };
+      default:
+        return { type: 'feat', name, img: item.img, system: { featType: 'trait', description: sys.description ?? '' } };
+    }
+  }
+
+  /**
+   * Convert one Anarchy (v1) actor to SRA2 actor + items. Respects guide B5 (attributes scale, item types).
+   */
+  private convertAnarchyActorToSra2(actor: any): { actorData: Record<string, unknown>; itemsData: Array<{ type: string; name: string; img?: string; system: Record<string, unknown> }> } {
+    const name = (actor.name ?? 'Sans nom').trim() || 'Sans nom';
+    const anarchyType = String(actor.type ?? 'character').toLowerCase();
+    const actorType: 'character' | 'vehicle' | 'ice' =
+      anarchyType === 'vehicle' ? 'vehicle' : anarchyType === 'sprite' ? 'character' : 'character';
+    const sys = actor.system && typeof actor.system === 'object' ? actor.system : {};
+
+    const system: Record<string, unknown> = {};
+
+    if (actorType === 'character') {
+      const attrs = sys.attributes ?? {};
+      system.attributes = {
+        strength: this.anarchyAttributeToSra2(Number(attrs.strength?.value ?? attrs.strength ?? 1)),
+        agility: this.anarchyAttributeToSra2(Number(attrs.agility?.value ?? attrs.agility ?? 1)),
+        willpower: this.anarchyAttributeToSra2(Number(attrs.willpower?.value ?? attrs.willpower ?? 1)),
+        logic: this.anarchyAttributeToSra2(Number(attrs.logic?.value ?? attrs.logic ?? 1)),
+        charisma: this.anarchyAttributeToSra2(Number(attrs.charisma?.value ?? attrs.charisma ?? 1)),
+      };
+      const counters = sys.counters ?? {};
+      if (counters.essence != null) (system as any).essence = Number(counters.essence?.value ?? counters.essence ?? 6);
+      if (sys.description != null && String(sys.description).trim()) {
+        (system as any).bio = { background: String(sys.description).trim(), notes: '' };
+      }
+      const monitors = sys.monitors ?? {};
+      if (monitors.physical != null || monitors.stun != null) {
+        (system as any).state = {
+          physical: { value: Number(monitors.physical?.value ?? 0), max: Number(monitors.physical?.max ?? 0) },
+          mental: { value: Number(monitors.stun?.value ?? 0), max: Number(monitors.stun?.max ?? 0) },
+          matrix: { value: 0, max: 0 },
+        };
+      }
+    } else if (actorType === 'vehicle') {
+      const attrs = sys.attributes ?? {};
+      const monitors = sys.monitors ?? {};
+      system.attributes = {
+        autopilot: Number(attrs.autopilot?.value ?? attrs.autopilot ?? 0),
+        structure: Number(monitors.structure?.max ?? attrs.system?.value ?? attrs.system ?? 0),
+        armor: Number(monitors.structure?.resistance ?? 0),
+        handling: Number(attrs.handling?.value ?? attrs.handling ?? 0),
+        speed: Number(attrs.handling?.value ?? attrs.handling ?? 0),
+      };
+      if (monitors.matrix != null) {
+        (system as any).state = {
+          matrix: { value: Number(monitors.matrix?.value ?? 0), max: Number(monitors.matrix?.max ?? 0) },
+        };
+      }
+    }
+
+    const itemsData: Array<{ type: string; name: string; img?: string; system: Record<string, unknown> }> = [];
+    const items = Array.isArray(actor.items) ? actor.items : [];
+    for (const it of items) {
+      try {
+        itemsData.push(this.convertAnarchyItemToSra2(it));
+      } catch (_) {
+        // skip broken items
+      }
+    }
+
+    const actorData: Record<string, unknown> = {
+      name,
+      type: actorType,
+      img: actor.img ?? undefined,
+      system,
+    };
+    return { actorData, itemsData };
+  }
+
+  /**
+   * Import actors from an Anarchy v1 full export JSON (converted to SRA2 per guide B5). Respects folder path when export includes folders.
+   * @param request.jsonContent - Full JSON string from export (exportedAt, world, actors, folders?)
+   * @param request.baseFolderPath - Base path for created folders (e.g. "Chti Runners"). If export has no folders, actors go in baseFolderPath/Personnages or baseFolderPath/Véhicules.
+   */
+  async importActorsFromAnarchyExport(request: {
+    jsonContent: string;
+    baseFolderPath?: string;
+  }): Promise<{ imported: number; errors: string[]; details: Array<{ name: string; id: string; folderPath: string }> }> {
+    this.validateFoundryState();
+    const systemId = (game as any).system?.id;
+    if (systemId !== 'sra2') {
+      throw new Error(`importActorsFromAnarchyExport is only supported when the game system is SRA2. Current system: ${systemId || 'unknown'}`);
+    }
+    const permissionCheck = permissionManager.checkWritePermission('createActor', { quantity: 100 });
+    if (!permissionCheck.allowed) {
+      throw new Error(`${ERROR_MESSAGES.ACCESS_DENIED}: ${permissionCheck.reason}`);
+    }
+
+    let data: { actors?: any[]; folders?: Array<{ id: string; name: string; parent: string | null }> };
+    try {
+      data = JSON.parse(request.jsonContent);
+    } catch (e) {
+      throw new Error('Invalid JSON: ' + (e instanceof Error ? e.message : 'parse error'));
+    }
+    const actors = Array.isArray(data.actors) ? data.actors : [];
+    const folders = Array.isArray(data.folders) ? data.folders : [];
+    const basePath = (request.baseFolderPath ?? 'Import Anarchy').trim().replace(/\/+$/, '') || 'Import Anarchy';
+    const errors: string[] = [];
+    const details: Array<{ name: string; id: string; folderPath: string }> = [];
+    let imported = 0;
+
+    for (const actor of actors) {
+      try {
+        const anarchyType = String(actor.type ?? 'character').toLowerCase();
+        if (anarchyType !== 'character' && anarchyType !== 'vehicle' && anarchyType !== 'sprite') continue;
+
+        let folderPath: string;
+        const folderId = actor.folder;
+        if (folderId && folders.length) {
+          const pathFromExport = this.buildFolderPathFromExport(folders, folderId);
+          folderPath = pathFromExport ? `${basePath}/${pathFromExport}` : (anarchyType === 'vehicle' ? `${basePath}/Véhicules` : `${basePath}/Personnages`);
+        } else {
+          folderPath = anarchyType === 'vehicle' ? `${basePath}/Véhicules` : `${basePath}/Personnages`;
+        }
+
+        const folderIdResolved = await this.getOrCreateFolderByPath(folderPath, 'Actor');
+        const { actorData, itemsData } = this.convertAnarchyActorToSra2(actor);
+        (actorData as any).folder = folderIdResolved ?? undefined;
+
+        const created = await (Actor as any).createDocuments([actorData]);
+        if (!created?.length) {
+          errors.push(`${actor.name}: create failed`);
+          continue;
+        }
+        const doc = created[0] as any;
+        if (itemsData.length) {
+          const toEmbed = itemsData.map((it) => ({
+            name: it.name,
+            type: it.type,
+            img: it.img,
+            system: it.system,
+          }));
+          await doc.createEmbeddedDocuments('Item', toEmbed);
+        }
+        imported++;
+        details.push({ name: doc.name, id: doc.id, folderPath });
+      } catch (e) {
+        errors.push(`${actor.name ?? '?'}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
+    this.auditLog('importActorsFromAnarchyExport', { baseFolderPath: request.baseFolderPath, count: actors.length }, 'success');
+    return { imported, errors, details };
   }
 
   /**

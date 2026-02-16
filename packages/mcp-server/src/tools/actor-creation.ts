@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import { z } from 'zod';
 import { FoundryClient } from '../foundry-client.js';
 import { Logger } from '../logger.js';
@@ -215,6 +216,27 @@ export class ActorCreationTools {
           required: ['actorId', 'biography'],
         },
       },
+      {
+        name: 'import-actors-from-anarchy-export',
+        description: 'Import all actors from an Anarchy v1 full export JSON into the current world (SRA2). Converts data per the Anarchy v2 B5 conversion guide (attributes scale, skills, weapons, shadowamps→feats, etc.). Respects folder path when the export includes a folders array; otherwise places actors under baseFolderPath/Personnages or baseFolderPath/Véhicules. World must be using system SRA2.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            filePath: {
+              type: 'string',
+              description: 'Absolute path to the export JSON file (e.g. G:\\Mon Drive\\Obsidian\\Shadowrun\\Chti Runners\\foundry-all-actors-export.json). If provided, jsonContent is ignored.',
+            },
+            jsonContent: {
+              type: 'string',
+              description: 'Raw JSON string of the export (exportedAt, world, actors, folders?). Use when file path is not available.',
+            },
+            baseFolderPath: {
+              type: 'string',
+              description: 'Base folder path for imported actors (e.g. "Chti Runners"). Default: "Import Anarchy".',
+            },
+          },
+        },
+      },
     ];
   }
 
@@ -425,9 +447,46 @@ export class ActorCreationTools {
     }
   }
 
-
-
-
+  /**
+   * Import actors from Anarchy v1 export JSON (converted to SRA2). Reads file from filePath or uses jsonContent.
+   */
+  async handleImportActorsFromAnarchyExport(args: any): Promise<any> {
+    let jsonContent: string;
+    if (args.filePath && typeof args.filePath === 'string') {
+      const filePath = String(args.filePath).trim();
+      if (!filePath) throw new Error('filePath cannot be empty');
+      try {
+        jsonContent = fs.readFileSync(filePath, 'utf8');
+      } catch (e) {
+        throw new Error(`Cannot read file "${filePath}": ${e instanceof Error ? e.message : String(e)}`);
+      }
+    } else if (args.jsonContent && typeof args.jsonContent === 'string') {
+      jsonContent = args.jsonContent;
+    } else {
+      throw new Error('Provide either filePath (path to export JSON file) or jsonContent (raw JSON string).');
+    }
+    const baseFolderPath = args.baseFolderPath != null ? String(args.baseFolderPath).trim() : undefined;
+    try {
+      const result = await this.foundryClient.query('foundry-mcp-bridge.importActorsFromAnarchyExport', {
+        jsonContent,
+        baseFolderPath,
+      });
+      this.logger.info('Import Anarchy export completed', { imported: result.imported, errors: result.errors?.length ?? 0 });
+      const detailsList = result.details?.length
+        ? result.details.map((d: { name: string; id: string; folderPath: string }) => `• ${d.name} (${d.id}) → ${d.folderPath}`).join('\n')
+        : '';
+      const errList = result.errors?.length ? `\nErreurs:\n${result.errors.map((e: string) => `• ${e}`).join('\n')}` : '';
+      return {
+        success: true,
+        imported: result.imported,
+        errors: result.errors ?? [],
+        details: result.details ?? [],
+        message: `Import terminé: ${result.imported} acteur(s) créé(s).${errList}${detailsList ? `\n\nActeurs:\n${detailsList}` : ''}`,
+      };
+    } catch (error) {
+      this.errorHandler.handleToolError(error, 'import-actors-from-anarchy-export', 'Anarchy→SRA2 import');
+    }
+  }
 
   /**
    * Format compendium entry response
