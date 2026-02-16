@@ -1485,6 +1485,18 @@ async function startBackend(): Promise<void> {
 
                   break;
 
+                case 'create-sra2-actor':
+
+                  result = await actorCreationTools.handleCreateSRA2Actor(args);
+
+                  break;
+
+                case 'create-sra2-item':
+
+                  result = await actorCreationTools.handleCreateSRA2Item(args);
+
+                  break;
+
                 // DSA5 character creation tools
 
                 case 'create-dsa5-character-from-archetype':

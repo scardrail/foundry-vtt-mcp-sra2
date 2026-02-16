@@ -103,6 +103,61 @@ export class ActorCreationTools {
           required: ['packId', 'entryId'],
         },
       },
+      {
+        name: 'create-sra2-actor',
+        description: 'Create a new Shadowrun Anarchy 2 (SRA2) actor in the world: character, vehicle, or ICE. Only works when the active game system is SRA2. The actor is created with minimal data; you can then edit it in Foundry or add items with create-sra2-item.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              description: 'Display name of the actor',
+            },
+            actorType: {
+              type: 'string',
+              enum: ['character', 'vehicle', 'ice'],
+              description: 'SRA2 actor type: character (PC/NPC), vehicle, or ice (Matrix ICE)',
+            },
+            folderName: {
+              type: 'string',
+              description: 'Optional folder name to organize the actor (default: Foundry MCP SRA2)',
+            },
+            addToScene: {
+              type: 'boolean',
+              description: 'If true, add the new actor to the current scene as a token',
+              default: false,
+            },
+          },
+          required: ['name', 'actorType'],
+        },
+      },
+      {
+        name: 'create-sra2-item',
+        description: 'Create a new Shadowrun Anarchy 2 (SRA2) item: skill, feat, specialization, or metatype. Only works when the game system is SRA2. If actorId is provided, the item is added to that actor; otherwise it is created in the world item directory.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              description: 'Display name of the item',
+            },
+            itemType: {
+              type: 'string',
+              enum: ['skill', 'feat', 'specialization', 'metatype'],
+              description: 'SRA2 item type',
+            },
+            actorId: {
+              type: 'string',
+              description: 'Optional: ID of an actor to add this item to (e.g. character sheet)',
+            },
+            folderName: {
+              type: 'string',
+              description: 'Optional folder name for world items (ignored if actorId is set)',
+            },
+          },
+          required: ['name', 'itemType'],
+        },
+      },
     ];
   }
 
@@ -206,8 +261,64 @@ export class ActorCreationTools {
     }
   }
 
+  /**
+   * Create a new SRA2 actor (character, vehicle, or ice)
+   */
+  async handleCreateSRA2Actor(args: any): Promise<any> {
+    const schema = z.object({
+      name: z.string().min(1, 'name is required'),
+      actorType: z.enum(['character', 'vehicle', 'ice']),
+      folderName: z.string().optional(),
+      addToScene: z.boolean().default(false),
+    });
+    const { name, actorType, folderName, addToScene } = schema.parse(args);
+    try {
+      const result = await this.foundryClient.query('foundry-mcp-bridge.createSRA2Actor', {
+        name,
+        actorType,
+        folderName,
+        addToScene,
+      });
+      this.logger.info('Created SRA2 actor', { id: result.id, name: result.name, type: result.type });
+      return {
+        success: true,
+        actor: result,
+        message: `Created SRA2 ${actorType}: **${result.name}** (id: ${result.id}). Open the actor in Foundry to edit details.`,
+      };
+    } catch (error) {
+      this.errorHandler.handleToolError(error, 'create-sra2-actor', 'SRA2 actor creation');
+    }
+  }
 
-
+  /**
+   * Create a new SRA2 item (skill, feat, specialization, metatype)
+   */
+  async handleCreateSRA2Item(args: any): Promise<any> {
+    const schema = z.object({
+      name: z.string().min(1, 'name is required'),
+      itemType: z.enum(['skill', 'feat', 'specialization', 'metatype']),
+      actorId: z.string().optional(),
+      folderName: z.string().optional(),
+    });
+    const { name, itemType, actorId, folderName } = schema.parse(args);
+    try {
+      const result = await this.foundryClient.query('foundry-mcp-bridge.createSRA2Item', {
+        name,
+        itemType,
+        actorId,
+        folderName,
+      });
+      this.logger.info('Created SRA2 item', { id: result.id, name: result.name, type: result.type, actorId: result.actorId });
+      const where = result.actorId ? `on actor ${result.actorId}` : 'in world items';
+      return {
+        success: true,
+        item: result,
+        message: `Created SRA2 ${itemType}: **${result.name}** (id: ${result.id}) ${where}. Edit in Foundry to set system details.`,
+      };
+    } catch (error) {
+      this.errorHandler.handleToolError(error, 'create-sra2-item', 'SRA2 item creation');
+    }
+  }
 
 
 

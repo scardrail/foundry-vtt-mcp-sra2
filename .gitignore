@@ -84,3 +84,6 @@ DEPLOYMENT-FIX.md
 DEVELOPMENT.md
 VERIFY.md
 VISUAL-CONFIRMATION.md
+scripts/install-module-to-foundry.ps1
+scripts/install-module-to-lxc.ps1
+INSTALL_MODULE_FOUNDRY.md

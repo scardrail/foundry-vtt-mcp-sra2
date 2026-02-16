@@ -3741,6 +3741,106 @@ export class FoundryDataAccess {
   }
 
   /**
+   * Create a new SRA2 actor in the world (character, vehicle, or ice).
+   * Only available when game system is sra2. Uses minimal data; SRA2 system fills defaults.
+   * @see https://github.com/VincentVk9373/sra2
+   */
+  async createSRA2Actor(request: {
+    name: string;
+    actorType: 'character' | 'vehicle' | 'ice';
+    folderName?: string;
+    addToScene?: boolean;
+  }): Promise<{ id: string; name: string; type: string }> {
+    this.validateFoundryState();
+    const systemId = (game as any).system?.id;
+    if (systemId !== 'sra2') {
+      throw new Error(`createSRA2Actor is only supported when the game system is SRA2. Current system: ${systemId || 'unknown'}`);
+    }
+
+    const permissionCheck = permissionManager.checkWritePermission('createActor', { quantity: 1 });
+    if (!permissionCheck.allowed) {
+      throw new Error(`${ERROR_MESSAGES.ACCESS_DENIED}: ${permissionCheck.reason}`);
+    }
+
+    const folderName = request.folderName || 'Foundry MCP SRA2';
+    const folderId = await this.getOrCreateFolder(folderName, 'Actor');
+
+    const actorData: any = {
+      name: request.name.trim() || 'Unnamed',
+      type: request.actorType,
+      img: undefined,
+      system: {},
+      folder: folderId || undefined,
+    };
+
+    const created = await Actor.createDocuments([actorData]);
+    if (!created?.length) throw new Error('Failed to create SRA2 actor');
+
+    const actor = created[0];
+    if (request.addToScene) {
+      try {
+        const scenePermissionCheck = permissionManager.checkWritePermission('modifyScene', { targetIds: [actor.id] });
+        if (scenePermissionCheck.allowed) {
+          await this.addActorsToScene({ actorIds: [actor.id], placement: 'random', hidden: false });
+        }
+      } catch (_) { /* ignore */ }
+    }
+
+    this.auditLog('createSRA2Actor', request, 'success');
+    return { id: actor.id, name: actor.name, type: (actor as any).type };
+  }
+
+  /**
+   * Create a new SRA2 item (skill, feat, specialization, metatype).
+   * If actorId is provided, the item is created on that actor; otherwise in the world.
+   * @see https://github.com/VincentVk9373/sra2
+   */
+  async createSRA2Item(request: {
+    name: string;
+    itemType: 'skill' | 'feat' | 'specialization' | 'metatype';
+    actorId?: string;
+    folderName?: string;
+  }): Promise<{ id: string; name: string; type: string; actorId?: string }> {
+    this.validateFoundryState();
+    const systemId = (game as any).system?.id;
+    if (systemId !== 'sra2') {
+      throw new Error(`createSRA2Item is only supported when the game system is SRA2. Current system: ${systemId || 'unknown'}`);
+    }
+
+    const permissionCheck = permissionManager.checkWritePermission('createActor', { quantity: 1 });
+    if (!permissionCheck.allowed) {
+      throw new Error(`${ERROR_MESSAGES.ACCESS_DENIED}: ${permissionCheck.reason}`);
+    }
+
+    const itemData: any = {
+      name: request.name.trim() || 'Unnamed',
+      type: request.itemType,
+      img: undefined,
+      system: {},
+    };
+
+    if (request.actorId) {
+      const actor = (game as any).actors?.get(request.actorId);
+      if (!actor) throw new Error(`Actor "${request.actorId}" not found`);
+      const created = await actor.createEmbeddedDocuments('Item', [itemData]);
+      if (!created?.length) throw new Error('Failed to create SRA2 item on actor');
+      const item = created[0];
+      this.auditLog('createSRA2Item', request, 'success');
+      return { id: item.id, name: item.name, type: (item as any).type, actorId: request.actorId };
+    }
+
+    const folderName = request.folderName || 'Foundry MCP SRA2 Items';
+    const folderId = await this.getOrCreateFolder(folderName, 'Item');
+    (itemData as any).folder = folderId || undefined;
+
+    const created = await (Item as any).createDocuments([itemData]);
+    if (!created?.length) throw new Error('Failed to create SRA2 item');
+    const item = created[0];
+    this.auditLog('createSRA2Item', request, 'success');
+    return { id: item.id, name: item.name, type: (item as any).type };
+  }
+
+  /**
    * Add actors to the current scene as tokens
    */
   async addActorsToScene(placement: SceneTokenPlacement, transactionId?: string): Promise<TokenPlacementResult> {
@@ -5059,7 +5159,7 @@ export class FoundryDataAccess {
   /**
    * Get or create a folder for organizing MCP-generated content
    */
-  private async getOrCreateFolder(folderName: string, type: 'Actor' | 'JournalEntry'): Promise<string | null> {
+  private async getOrCreateFolder(folderName: string, type: 'Actor' | 'JournalEntry' | 'Item'): Promise<string | null> {
     try {
       // Look for existing folder
       const existingFolder = game.folders?.find((f: any) => 
@@ -5078,6 +5178,8 @@ export class FoundryDataAccess {
         } else {
           description = `NPCs and creatures related to: ${folderName}`;
         }
+      } else if (type === 'Item') {
+        description = `Items created via Foundry MCP Bridge SRA2: ${folderName}`;
       } else {
         description = `Quest and content for: ${folderName}`;
       }
@@ -5087,7 +5189,7 @@ export class FoundryDataAccess {
         name: folderName,
         type: type,
         description: description,
-        color: type === 'Actor' ? '#4a90e2' : '#f39c12', // Blue for actors, orange for journals
+        color: type === 'Actor' ? '#4a90e2' : type === 'Item' ? '#27ae60' : '#f39c12', // Blue actors, green items, orange journals
         sort: 0,
         parent: null,
         flags: {
