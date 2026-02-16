@@ -4159,10 +4159,7 @@ export class FoundryDataAccess {
     if (systemId !== 'sra2') {
       throw new Error(`importActorsFromAnarchyExport is only supported when the game system is SRA2. Current system: ${systemId || 'unknown'}`);
     }
-    const permissionCheck = permissionManager.checkWritePermission('createActor', { quantity: 100 });
-    if (!permissionCheck.allowed) {
-      throw new Error(`${ERROR_MESSAGES.ACCESS_DENIED}: ${permissionCheck.reason}`);
-    }
+    const MAX_ACTORS_PER_BATCH = 10;
 
     let data: { actors?: any[]; folders?: Array<{ id: string; name: string; parent: string | null }> };
     try {
@@ -4177,47 +4174,58 @@ export class FoundryDataAccess {
     const details: Array<{ name: string; id: string; folderPath: string }> = [];
     let imported = 0;
 
-    for (const actor of actors) {
-      try {
-        const anarchyType = String(actor.type ?? 'character').toLowerCase();
-        if (anarchyType !== 'character' && anarchyType !== 'vehicle' && anarchyType !== 'sprite') continue;
+    const toProcess = actors.filter((a: any) => {
+      const t = String(a.type ?? 'character').toLowerCase();
+      return t === 'character' || t === 'vehicle' || t === 'sprite';
+    });
 
-        let folderPath: string;
-        const folderId = actor.folder;
-        if (folderId && folders.length) {
-          const pathFromExport = this.buildFolderPathFromExport(folders, folderId);
-          folderPath = pathFromExport ? `${basePath}/${pathFromExport}` : (anarchyType === 'vehicle' ? `${basePath}/Véhicules` : `${basePath}/Personnages`);
-        } else {
-          folderPath = anarchyType === 'vehicle' ? `${basePath}/Véhicules` : `${basePath}/Personnages`;
-        }
+    for (let i = 0; i < toProcess.length; i += MAX_ACTORS_PER_BATCH) {
+      const batch = toProcess.slice(i, i + MAX_ACTORS_PER_BATCH);
+      const permissionCheck = permissionManager.checkWritePermission('createActor', { quantity: batch.length });
+      if (!permissionCheck.allowed) {
+        errors.push(`Batch ${Math.floor(i / MAX_ACTORS_PER_BATCH) + 1}: ${permissionCheck.reason}`);
+        continue;
+      }
+      for (const actor of batch) {
+        try {
+          const anarchyType = String(actor.type ?? 'character').toLowerCase();
+          let folderPath: string;
+          const folderId = actor.folder;
+          if (folderId && folders.length) {
+            const pathFromExport = this.buildFolderPathFromExport(folders, folderId);
+            folderPath = pathFromExport ? `${basePath}/${pathFromExport}` : (anarchyType === 'vehicle' ? `${basePath}/Véhicules` : `${basePath}/Personnages`);
+          } else {
+            folderPath = anarchyType === 'vehicle' ? `${basePath}/Véhicules` : `${basePath}/Personnages`;
+          }
 
-        const folderIdResolved = await this.getOrCreateFolderByPath(folderPath, 'Actor');
-        const { actorData, itemsData } = this.convertAnarchyActorToSra2(actor);
-        (actorData as any).folder = folderIdResolved ?? undefined;
+          const folderIdResolved = await this.getOrCreateFolderByPath(folderPath, 'Actor');
+          const { actorData, itemsData } = this.convertAnarchyActorToSra2(actor);
+          (actorData as any).folder = folderIdResolved ?? undefined;
 
-        const created = await (Actor as any).createDocuments([actorData]);
-        if (!created?.length) {
-          errors.push(`${actor.name}: create failed`);
-          continue;
+          const created = await (Actor as any).createDocuments([actorData]);
+          if (!created?.length) {
+            errors.push(`${actor.name}: create failed`);
+            continue;
+          }
+          const doc = created[0] as any;
+          if (itemsData.length) {
+            const toEmbed = itemsData.map((it: any) => ({
+              name: it.name,
+              type: it.type,
+              img: it.img,
+              system: it.system,
+            }));
+            await doc.createEmbeddedDocuments('Item', toEmbed);
+          }
+          imported++;
+          details.push({ name: doc.name, id: doc.id, folderPath });
+        } catch (e) {
+          errors.push(`${actor.name ?? '?'}: ${e instanceof Error ? e.message : String(e)}`);
         }
-        const doc = created[0] as any;
-        if (itemsData.length) {
-          const toEmbed = itemsData.map((it) => ({
-            name: it.name,
-            type: it.type,
-            img: it.img,
-            system: it.system,
-          }));
-          await doc.createEmbeddedDocuments('Item', toEmbed);
-        }
-        imported++;
-        details.push({ name: doc.name, id: doc.id, folderPath });
-      } catch (e) {
-        errors.push(`${actor.name ?? '?'}: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
 
-    this.auditLog('importActorsFromAnarchyExport', { baseFolderPath: request.baseFolderPath, count: actors.length }, 'success');
+    this.auditLog('importActorsFromAnarchyExport', { baseFolderPath: request.baseFolderPath, count: toProcess.length }, 'success');
     return { imported, errors, details };
   }
 
