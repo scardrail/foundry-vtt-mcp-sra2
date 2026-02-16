@@ -51,6 +51,7 @@ export class QueryHandlers {
 
     // Phase 2 & 3: Write operation queries
     CONFIG.queries[`${modulePrefix}.createActorFromCompendium`] = this.handleCreateActorFromCompendium.bind(this);
+    CONFIG.queries[`${modulePrefix}.createItemFromCompendium`] = this.handleCreateItemFromCompendium.bind(this);
     CONFIG.queries[`${modulePrefix}.getCompendiumDocumentFull`] = this.handleGetCompendiumDocumentFull.bind(this);
     CONFIG.queries[`${modulePrefix}.createSRA2Actor`] = this.handleCreateSRA2Actor.bind(this);
     CONFIG.queries[`${modulePrefix}.createSRA2Item`] = this.handleCreateSRA2Item.bind(this);
@@ -416,6 +417,33 @@ export class QueryHandlers {
   }
 
   /**
+   * Handle create item from compendium (world or actor). Items are placed in folders by type (SRA2: Skills, Feats, Weapons, etc.).
+   */
+  private async handleCreateItemFromCompendium(data: {
+    packId: string;
+    itemId: string;
+    customNames?: string[];
+    quantity?: number;
+    actorId?: string;
+  }): Promise<any> {
+    try {
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) return { error: 'Access denied', success: false };
+      this.dataAccess.validateFoundryState();
+      const requestData = {
+        packId: data.packId,
+        itemId: data.itemId,
+        customNames: data.customNames ?? [],
+        quantity: data.quantity ?? 1,
+        ...(data.actorId != null && data.actorId !== '' ? { actorId: data.actorId } : {}),
+      };
+      return await this.dataAccess.createItemFromCompendiumEntry(requestData);
+    } catch (error) {
+      throw new Error(`Failed to create item from compendium: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
    * Handle get compendium document full request
    */
   private async handleGetCompendiumDocumentFull(data: {
@@ -471,11 +499,14 @@ export class QueryHandlers {
   }
 
   /**
-   * Handle create SRA2 item (skill, feat, specialization, metatype)
+   * Handle create SRA2 item from content (name, type, optional description and system data)
    */
   private async handleCreateSRA2Item(data: {
     name: string;
     itemType: 'skill' | 'feat' | 'specialization' | 'metatype';
+    description?: string;
+    system?: Record<string, unknown>;
+    img?: string;
     actorId?: string;
     folderName?: string;
   }): Promise<{ id: string; name: string; type: string; actorId?: string }> {
@@ -484,13 +515,24 @@ export class QueryHandlers {
     this.dataAccess.validateFoundryState();
     if (!data.name?.trim()) throw new Error('name is required');
     if (!['skill', 'feat', 'specialization', 'metatype'].includes(data.itemType)) throw new Error('itemType must be skill, feat, specialization, or metatype');
-    const request: { name: string; itemType: 'skill' | 'feat' | 'specialization' | 'metatype'; actorId?: string; folderName?: string } = {
+    const request: {
+      name: string;
+      itemType: 'skill' | 'feat' | 'specialization' | 'metatype';
+      description?: string;
+      system?: Record<string, unknown>;
+      img?: string;
+      actorId?: string;
+      folderName?: string;
+    } = {
       name: data.name,
       itemType: data.itemType,
     };
+    if (data.description !== undefined) request.description = data.description;
+    if (data.system !== undefined && data.system !== null) request.system = data.system;
+    if (data.img !== undefined) request.img = data.img;
     if (data.actorId !== undefined) request.actorId = data.actorId;
     if (data.folderName !== undefined) request.folderName = data.folderName;
-    return await this.dataAccess.createSRA2Item(request);
+    return await this.dataAccess.createSRA2ItemFromContent(request);
   }
 
   /**

@@ -137,7 +137,7 @@ export class ActorCreationTools {
       },
       {
         name: 'create-sra2-item',
-        description: 'Create a new Shadowrun Anarchy 2 (SRA2) item: skill, feat, specialization, or metatype. Only works when the game system is SRA2. If actorId is provided, the item is added to that actor; otherwise it is created in the world item directory.',
+        description: 'Create an SRA2 item from content you provide: name, type, and optionally description and system data. Items are placed in folders by type (Skills, Feats, Weapons, Spells, Equipment, etc.). Use this to create items from your own content, not from a compendium. If actorId is set, the item is added to that actor; otherwise it is created in the world.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -150,13 +150,25 @@ export class ActorCreationTools {
               enum: ['skill', 'feat', 'specialization', 'metatype'],
               description: 'SRA2 item type',
             },
+            description: {
+              type: 'string',
+              description: 'Optional description or full text content of the item',
+            },
+            system: {
+              type: 'object',
+              description: 'Optional system data (e.g. featType, damage, ranges). For feats, featType can be weapon, spell, equipment, armor, etc. to control folder placement.',
+            },
+            img: {
+              type: 'string',
+              description: 'Optional image path or URL for the item',
+            },
             actorId: {
               type: 'string',
-              description: 'Optional: ID of an actor to add this item to (e.g. character sheet)',
+              description: 'Optional: ID of an actor to add this item to',
             },
             folderName: {
               type: 'string',
-              description: 'Optional folder name for world items (ignored if actorId is set)',
+              description: 'Optional folder name for world items (ignored if actorId is set). If omitted, folder is chosen by type (e.g. Weapons, Spells).',
             },
           },
           required: ['name', 'itemType'],
@@ -315,23 +327,27 @@ export class ActorCreationTools {
     const schema = z.object({
       name: z.string().min(1, 'name is required'),
       itemType: z.enum(['skill', 'feat', 'specialization', 'metatype']),
+      description: z.string().optional(),
+      system: z.record(z.unknown()).optional(),
+      img: z.string().optional(),
       actorId: z.string().optional(),
       folderName: z.string().optional(),
     });
-    const { name, itemType, actorId, folderName } = schema.parse(args);
+    const { name, itemType, description, system, img, actorId, folderName } = schema.parse(args);
     try {
-      const result = await this.foundryClient.query('foundry-mcp-bridge.createSRA2Item', {
-        name,
-        itemType,
-        actorId,
-        folderName,
-      });
-      this.logger.info('Created SRA2 item', { id: result.id, name: result.name, type: result.type, actorId: result.actorId });
+      const payload: Record<string, unknown> = { name, itemType };
+      if (description !== undefined) payload.description = description;
+      if (system !== undefined && Object.keys(system).length > 0) payload.system = system;
+      if (img !== undefined) payload.img = img;
+      if (actorId !== undefined) payload.actorId = actorId;
+      if (folderName !== undefined) payload.folderName = folderName;
+      const result = await this.foundryClient.query('foundry-mcp-bridge.createSRA2Item', payload);
+      this.logger.info('Created SRA2 item from content', { id: result.id, name: result.name, type: result.type, actorId: result.actorId });
       const where = result.actorId ? `on actor ${result.actorId}` : 'in world items';
       return {
         success: true,
         item: result,
-        message: `Created SRA2 ${itemType}: **${result.name}** (id: ${result.id}) ${where}. Edit in Foundry to set system details.`,
+        message: `Created SRA2 ${itemType}: **${result.name}** (id: ${result.id}) ${where}.`,
       };
     } catch (error) {
       this.errorHandler.handleToolError(error, 'create-sra2-item', 'SRA2 item creation');

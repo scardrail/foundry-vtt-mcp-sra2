@@ -3868,8 +3868,49 @@ export class FoundryDataAccess {
   }
 
   /**
+   * Folder name for SRA2 items by type. Feat subtypes from system (Weapons, Spells, Equipment, etc.) go in subfolders.
+   * @see https://github.com/VincentVk9373/sra2
+   */
+  private getFolderNameForSRA2Item(itemType: string, system?: any): string {
+    const base: Record<string, string> = {
+      skill: 'Skills',
+      feat: 'Feats',
+      specialization: 'Specializations',
+      metatype: 'Metatypes',
+    };
+    const name = base[itemType] ?? itemType;
+    if (itemType !== 'feat' || !system) return name;
+    const featType = system.featType ?? system.feat?.type ?? system.type;
+    if (!featType || typeof featType !== 'string') return name;
+    const sub = (featType as string).trim().toLowerCase();
+    const subFolders: Record<string, string> = {
+      weapon: 'Weapons',
+      weapons: 'Weapons',
+      spell: 'Spells',
+      spells: 'Spells',
+      equipment: 'Equipment',
+      armor: 'Armor',
+      trait: 'Traits',
+      traits: 'Traits',
+      contact: 'Contacts',
+      contacts: 'Contacts',
+      awakened: 'Awakened',
+      adept: 'Adept Powers',
+      cyberware: 'Cyberware',
+      bioware: 'Bioware',
+      cyberdeck: 'Cyberdecks',
+      vehicle: 'Vehicles',
+      drone: 'Drones',
+      power: 'Powers',
+      powers: 'Powers',
+      knowledge: 'Knowledge',
+    };
+    return subFolders[sub] ?? name;
+  }
+
+  /**
    * Create a new SRA2 item (skill, feat, specialization, metatype).
-   * If actorId is provided, the item is created on that actor; otherwise in the world.
+   * If actorId is provided, the item is created on that actor; otherwise in the world, in a folder by type.
    * @see https://github.com/VincentVk9373/sra2
    */
   async createSRA2Item(request: {
@@ -3878,10 +3919,35 @@ export class FoundryDataAccess {
     actorId?: string;
     folderName?: string;
   }): Promise<{ id: string; name: string; type: string; actorId?: string }> {
+    const payload: {
+      name: string;
+      itemType: 'skill' | 'feat' | 'specialization' | 'metatype';
+      actorId?: string;
+      folderName?: string;
+    } = { name: request.name, itemType: request.itemType };
+    if (request.actorId !== undefined) payload.actorId = request.actorId;
+    if (request.folderName !== undefined) payload.folderName = request.folderName;
+    return this.createSRA2ItemFromContent(payload);
+  }
+
+  /**
+   * Create an SRA2 item from user-provided content (name, type, description, system data).
+   * Items are placed in folders by type (Skills, Feats, Weapons, Spells, etc.).
+   * @see https://github.com/VincentVk9373/sra2
+   */
+  async createSRA2ItemFromContent(request: {
+    name: string;
+    itemType: 'skill' | 'feat' | 'specialization' | 'metatype';
+    description?: string;
+    system?: Record<string, unknown>;
+    img?: string;
+    actorId?: string;
+    folderName?: string;
+  }): Promise<{ id: string; name: string; type: string; actorId?: string }> {
     this.validateFoundryState();
     const systemId = (game as any).system?.id;
     if (systemId !== 'sra2') {
-      throw new Error(`createSRA2Item is only supported when the game system is SRA2. Current system: ${systemId || 'unknown'}`);
+      throw new Error(`createSRA2ItemFromContent is only supported when the game system is SRA2. Current system: ${systemId || 'unknown'}`);
     }
 
     const permissionCheck = permissionManager.checkWritePermission('createActor', { quantity: 1 });
@@ -3889,12 +3955,17 @@ export class FoundryDataAccess {
       throw new Error(`${ERROR_MESSAGES.ACCESS_DENIED}: ${permissionCheck.reason}`);
     }
 
+    const system = request.system && typeof request.system === 'object' ? { ...request.system } : {};
     const itemData: any = {
-      name: request.name.trim() || 'Unnamed',
+      name: (request.name ?? '').trim() || 'Unnamed',
       type: request.itemType,
-      img: undefined,
-      system: {},
+      img: request.img ?? undefined,
+      system,
     };
+
+    if (request.description != null && request.description !== '') {
+      itemData.system.description = request.description;
+    }
 
     if (request.actorId) {
       const actor = (game as any).actors?.get(request.actorId);
@@ -3902,19 +3973,98 @@ export class FoundryDataAccess {
       const created = await actor.createEmbeddedDocuments('Item', [itemData]);
       if (!created?.length) throw new Error('Failed to create SRA2 item on actor');
       const item = created[0];
-      this.auditLog('createSRA2Item', request, 'success');
+      this.auditLog('createSRA2ItemFromContent', request, 'success');
       return { id: item.id, name: item.name, type: (item as any).type, actorId: request.actorId };
     }
 
-    const folderName = request.folderName || 'Foundry MCP SRA2 Items';
+    const folderName = request.folderName ?? this.getFolderNameForSRA2Item(request.itemType, itemData.system);
     const folderId = await this.getOrCreateFolder(folderName, 'Item');
     (itemData as any).folder = folderId || undefined;
 
     const created = await (Item as any).createDocuments([itemData]);
     if (!created?.length) throw new Error('Failed to create SRA2 item');
     const item = created[0];
-    this.auditLog('createSRA2Item', request, 'success');
+    this.auditLog('createSRA2ItemFromContent', request, 'success');
     return { id: item.id, name: item.name, type: (item as any).type };
+  }
+
+  /**
+   * Create one or more items from a compendium entry in the world (or on an actor if actorId is set).
+   * Items are placed in folders by type; for SRA2, uses getFolderNameForSRA2Item (Skills, Feats, Weapons, Spells, etc.).
+   */
+  async createItemFromCompendiumEntry(request: {
+    packId: string;
+    itemId: string;
+    customNames?: string[];
+    quantity?: number;
+    actorId?: string;
+  }): Promise<{ success: boolean; totalCreated: number; totalRequested: number; items: Array<{ id: string; name: string; type: string; actorId?: string }>; errors?: string[] }> {
+    this.validateFoundryState();
+
+    const { packId, itemId, customNames = [], quantity = 1, actorId } = request;
+    if (!packId || !itemId) throw new Error('packId and itemId are required');
+
+    const pack = (game as any).packs?.get(packId);
+    if (!pack) throw new Error(`Compendium pack "${packId}" not found`);
+
+    const sourceDoc = await pack.getDocument(itemId);
+    if (!sourceDoc) throw new Error(`Document "${itemId}" not found in pack "${packId}"`);
+    if (sourceDoc.documentName !== 'Item') {
+      throw new Error(`Document "${itemId}" is not an Item (documentName: ${sourceDoc.documentName})`);
+    }
+
+    const sourceItem = sourceDoc as any;
+    const sourceData = sourceItem.toObject();
+    const names = customNames.length > 0 ? customNames : [sourceItem.name];
+    const finalQuantity = Math.min(quantity, names.length);
+    const systemId = (game as any).system?.id;
+    const createdItems: Array<{ id: string; name: string; type: string; actorId?: string }> = [];
+    const errors: string[] = [];
+
+    for (let i = 0; i < finalQuantity; i++) {
+      try {
+        const customName = names[i] ?? `${sourceItem.name} ${i + 1}`;
+        const itemData = {
+          ...sourceData,
+          name: customName,
+          _id: undefined,
+          folder: undefined,
+        };
+
+        if (actorId) {
+          const actor = (game as any).actors?.get(actorId);
+          if (!actor) throw new Error(`Actor "${actorId}" not found`);
+          const created = await actor.createEmbeddedDocuments('Item', [itemData]);
+          if (!created?.length) throw new Error('Failed to create item on actor');
+          const item = created[0];
+          createdItems.push({ id: item.id, name: item.name, type: (item as any).type, actorId });
+        } else {
+          let folderName: string;
+          if (systemId === 'sra2') {
+            folderName = this.getFolderNameForSRA2Item(sourceData.type, sourceData.system);
+          } else {
+            folderName = sourceData.type ? String(sourceData.type).charAt(0).toUpperCase() + String(sourceData.type).slice(1) : 'Items';
+          }
+          const folderId = await this.getOrCreateFolder(folderName, 'Item');
+          (itemData as any).folder = folderId ?? undefined;
+          const created = await (Item as any).createDocuments([itemData]);
+          if (!created?.length) throw new Error('Failed to create item in world');
+          const item = created[0];
+          createdItems.push({ id: item.id, name: item.name, type: (item as any).type });
+        }
+      } catch (err) {
+        errors.push(err instanceof Error ? err.message : 'Unknown error');
+      }
+    }
+
+    this.auditLog('createItemFromCompendiumEntry', request, createdItems.length > 0 ? 'success' : 'failure');
+    return {
+      success: createdItems.length > 0,
+      totalCreated: createdItems.length,
+      totalRequested: finalQuantity,
+      items: createdItems,
+      ...(errors.length > 0 && { errors }),
+    };
   }
 
   /**

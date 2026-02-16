@@ -261,6 +261,39 @@ export class CompendiumTools {
           required: ['packId'],
         },
       },
+      {
+        name: 'create-item-from-compendium',
+        description: 'Create one or more items from a compendium entry in the world (or on an actor if actorId is set). Use search-compendium or list-compendium-items first to get packId and itemId. Items are placed in folders by type; for SRA2 (Shadowrun Anarchy 2) uses type-based folders: Skills, Feats, Weapons, Spells, Equipment, Armor, etc.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            packId: {
+              type: 'string',
+              description: 'ID of the compendium pack containing the item (e.g. "world.armes-sra")',
+            },
+            itemId: {
+              type: 'string',
+              description: 'ID of the item entry within the pack (from search-compendium or list-compendium-items)',
+            },
+            names: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Custom names for each created item (e.g. ["Mon arme", "Épée +1"]). If omitted, uses the compendium item name.',
+            },
+            quantity: {
+              type: 'number',
+              description: 'Number of copies to create (default: 1)',
+              minimum: 1,
+              maximum: 10,
+            },
+            actorId: {
+              type: 'string',
+              description: 'If set, items are added to this actor instead of the world Items directory.',
+            },
+          },
+          required: ['packId', 'itemId'],
+        },
+      },
     ];
   }
 
@@ -617,6 +650,39 @@ export class CompendiumTools {
     } catch (error) {
       this.logger.error('Failed to list compendium items', error);
       throw new Error(`Failed to list compendium items: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async handleCreateItemFromCompendium(args: any): Promise<any> {
+    const schema = z.object({
+      packId: z.string().min(1, 'packId is required'),
+      itemId: z.string().min(1, 'itemId is required'),
+      names: z.array(z.string()).optional(),
+      quantity: z.number().min(1).max(10).optional(),
+      actorId: z.string().optional(),
+    });
+    const { packId, itemId, names, quantity = 1, actorId } = schema.parse(args);
+    const customNames = names && names.length > 0 ? names : [];
+    try {
+      const result = await this.foundryClient.query('foundry-mcp-bridge.createItemFromCompendium', {
+        packId,
+        itemId,
+        customNames,
+        quantity,
+        ...(actorId != null && actorId !== '' ? { actorId } : {}),
+      });
+      if (result?.error) throw new Error(result.error);
+      const created = (result as any).items ?? [];
+      return {
+        success: (result as any).success,
+        totalCreated: (result as any).totalCreated ?? created.length,
+        totalRequested: (result as any).totalRequested ?? quantity,
+        items: created.map((i: any) => ({ id: i.id, name: i.name, type: i.type, ...(i.actorId && { actorId: i.actorId }) })),
+        ...((result as any).errors?.length && { errors: (result as any).errors }),
+      };
+    } catch (error) {
+      this.logger.error('Failed to create item from compendium', error);
+      throw new Error(`Failed to create item from compendium: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 

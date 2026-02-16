@@ -1485,6 +1485,12 @@ async function startBackend(): Promise<void> {
 
                   break;
 
+                case 'create-item-from-compendium':
+
+                  result = await compendiumTools.handleCreateItemFromCompendium(args);
+
+                  break;
+
                 case 'get-compendium-entry-full':
 
                   result = await actorCreationTools.handleGetCompendiumEntryFull(args);
