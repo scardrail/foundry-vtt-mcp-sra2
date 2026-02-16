@@ -105,7 +105,7 @@ export class ActorCreationTools {
       },
       {
         name: 'create-sra2-actor',
-        description: 'Create a new Shadowrun Anarchy 2 (SRA2) actor in the world: character, vehicle, or ICE. Only works when the active game system is SRA2. The actor is created with minimal data; you can then edit it in Foundry or add items with create-sra2-item.',
+        description: 'Create an SRA2 actor (character, vehicle, or ICE) with full content: name, type, biography, system data (attributes, keywords), linked items (metatype, traits, weapons, etc.), and skill values. Use for importing pregens or characters created elsewhere. Items can be world item IDs (itemIds) or inline definitions (items). Skills can be a simple map of skill name to value.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -120,16 +120,45 @@ export class ActorCreationTools {
             },
             folderName: {
               type: 'string',
-              description: 'Optional folder name to organize the actor (default: Foundry MCP SRA2)',
+              description: 'Optional folder name (default: Foundry MCP SRA2)',
             },
             addToScene: {
               type: 'boolean',
-              description: 'If true, add the new actor to the current scene as a token',
+              description: 'If true, add the actor to the current scene as a token',
               default: false,
             },
             biography: {
               type: 'string',
-              description: 'Optional description/biography for the character (stored in SRA2 "Bio" / Identity section, system.bio.background)',
+              description: 'Optional biography (system.bio.background)',
+            },
+            system: {
+              type: 'object',
+              description: 'Optional system overrides: e.g. attributes (strength, agility, willpower, logic, charisma), keywords (keyword1..keyword5). Merged into actor system.',
+            },
+            itemIds: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Optional world item IDs to add to the actor (metatype, traits, weapons, etc.). Items must exist in the world.',
+            },
+            items: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string' },
+                  itemType: { type: 'string', enum: ['skill', 'feat', 'specialization', 'metatype'] },
+                  description: { type: 'string' },
+                  system: { type: 'object' },
+                  img: { type: 'string' },
+                },
+                required: ['name', 'itemType'],
+              },
+              description: 'Optional inline items to create and add (name, itemType, description?, system?, img?).',
+            },
+            skills: {
+              type: 'object',
+              additionalProperties: { type: 'number' },
+              description: 'Optional skill values: { "Conduite": 3, "Pistolets": 4 }. Creates skill items and adds them to the actor.',
             },
           },
           required: ['name', 'actorType'],
@@ -293,27 +322,44 @@ export class ActorCreationTools {
    * Create a new SRA2 actor (character, vehicle, or ice)
    */
   async handleCreateSRA2Actor(args: any): Promise<any> {
+    const itemDefSchema = z.object({
+      name: z.string().min(1),
+      itemType: z.enum(['skill', 'feat', 'specialization', 'metatype']),
+      description: z.string().optional(),
+      system: z.record(z.unknown()).optional(),
+      img: z.string().optional(),
+    });
     const schema = z.object({
       name: z.string().min(1, 'name is required'),
       actorType: z.enum(['character', 'vehicle', 'ice']),
       folderName: z.string().optional(),
       addToScene: z.boolean().default(false),
       biography: z.string().optional(),
+      system: z.record(z.unknown()).optional(),
+      itemIds: z.array(z.string()).optional(),
+      items: z.array(itemDefSchema).optional(),
+      skills: z.record(z.number()).optional(),
     });
-    const { name, actorType, folderName, addToScene, biography } = schema.parse(args);
+    const parsed = schema.parse(args);
+    const payload: Record<string, unknown> = {
+      name: parsed.name,
+      actorType: parsed.actorType,
+      addToScene: parsed.addToScene,
+    };
+    if (parsed.folderName !== undefined) payload.folderName = parsed.folderName;
+    if (parsed.biography != null && parsed.biography !== '') payload.biography = parsed.biography;
+    if (parsed.system !== undefined && Object.keys(parsed.system).length > 0) payload.system = parsed.system;
+    if (parsed.itemIds !== undefined && parsed.itemIds.length > 0) payload.itemIds = parsed.itemIds;
+    if (parsed.items !== undefined && parsed.items.length > 0) payload.items = parsed.items;
+    if (parsed.skills !== undefined && Object.keys(parsed.skills).length > 0) payload.skills = parsed.skills;
     try {
-      const result = await this.foundryClient.query('foundry-mcp-bridge.createSRA2Actor', {
-        name,
-        actorType,
-        folderName,
-        addToScene,
-        ...(biography != null && biography !== '' ? { biography } : {}),
-      });
-      this.logger.info('Created SRA2 actor', { id: result.id, name: result.name, type: result.type });
+      const result = await this.foundryClient.query('foundry-mcp-bridge.createSRA2Actor', payload);
+      this.logger.info('Created SRA2 actor from content', { id: result.id, name: result.name, type: result.type, itemsAdded: result.itemsAdded });
+      const itemsNote = result.itemsAdded != null && result.itemsAdded > 0 ? ` (${result.itemsAdded} item(s) added)` : '';
       return {
         success: true,
         actor: result,
-        message: `Created SRA2 ${actorType}: **${result.name}** (id: ${result.id}). Open the actor in Foundry to edit details.`,
+        message: `Created SRA2 ${parsed.actorType}: **${result.name}** (id: ${result.id})${itemsNote}.`,
       };
     } catch (error) {
       this.errorHandler.handleToolError(error, 'create-sra2-actor', 'SRA2 actor creation');

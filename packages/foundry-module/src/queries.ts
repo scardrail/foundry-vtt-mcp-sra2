@@ -474,7 +474,7 @@ export class QueryHandlers {
   }
 
   /**
-   * Handle create SRA2 actor (character, vehicle, ice)
+   * Handle create SRA2 actor from content (character, vehicle, ice) with optional system, items, skills
    */
   private async handleCreateSRA2Actor(data: {
     name: string;
@@ -482,20 +482,34 @@ export class QueryHandlers {
     folderName?: string;
     addToScene?: boolean;
     biography?: string;
-  }): Promise<{ id: string; name: string; type: string }> {
+    system?: Record<string, unknown>;
+    itemIds?: string[];
+    items?: Array<{ name: string; itemType: 'skill' | 'feat' | 'specialization' | 'metatype'; description?: string; system?: Record<string, unknown>; img?: string }>;
+    skills?: Record<string, number>;
+  }): Promise<{ id: string; name: string; type: string; itemsAdded?: number }> {
     const gmCheck = this.validateGMAccess();
     if (!gmCheck.allowed) throw new Error('Access denied');
     this.dataAccess.validateFoundryState();
     if (!data.name?.trim()) throw new Error('name is required');
     if (!['character', 'vehicle', 'ice'].includes(data.actorType)) throw new Error('actorType must be character, vehicle, or ice');
-    const request: { name: string; actorType: 'character' | 'vehicle' | 'ice'; folderName?: string; addToScene?: boolean; biography?: string } = {
-      name: data.name,
-      actorType: data.actorType,
-      addToScene: data.addToScene ?? false,
-    };
+    const request: {
+      name: string;
+      actorType: 'character' | 'vehicle' | 'ice';
+      addToScene: boolean;
+      folderName?: string;
+      biography?: string;
+      system?: Record<string, unknown>;
+      itemIds?: string[];
+      items?: Array<{ name: string; itemType: 'skill' | 'feat' | 'specialization' | 'metatype'; description?: string; system?: Record<string, unknown>; img?: string }>;
+      skills?: Record<string, number>;
+    } = { name: data.name, actorType: data.actorType, addToScene: data.addToScene ?? false };
     if (data.folderName !== undefined) request.folderName = data.folderName;
     if (data.biography !== undefined && data.biography !== '') request.biography = data.biography;
-    return await this.dataAccess.createSRA2Actor(request);
+    if (data.system !== undefined && data.system !== null) request.system = data.system;
+    if (data.itemIds !== undefined && data.itemIds.length > 0) request.itemIds = data.itemIds;
+    if (data.items !== undefined && data.items.length > 0) request.items = data.items;
+    if (data.skills !== undefined && Object.keys(data.skills).length > 0) request.skills = data.skills;
+    return await this.dataAccess.createSRA2ActorFromContent(request);
   }
 
   /**

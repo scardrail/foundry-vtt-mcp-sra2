@@ -3784,6 +3784,125 @@ export class FoundryDataAccess {
   }
 
   /**
+   * Create a new SRA2 actor from full content: name, type, system overrides, linked items (by id or inline), and optional skill values.
+   * For importing pregens or characters created elsewhere.
+   * @see https://github.com/VincentVk9373/sra2
+   */
+  async createSRA2ActorFromContent(request: {
+    name: string;
+    actorType: 'character' | 'vehicle' | 'ice';
+    folderName?: string;
+    addToScene?: boolean;
+    biography?: string;
+    /** Partial system data merged into actor (e.g. attributes, keywords). For characters: attributes.strength, .agility, .willpower, .logic, .charisma, keywords.keyword1..keyword5 */
+    system?: Record<string, unknown>;
+    /** World item IDs to add to the actor (metatype, traits, weapons, etc.). Items must exist in the world. */
+    itemIds?: string[];
+    /** Inline item definitions to create and add to the actor (name, itemType, description?, system?, img?). */
+    items?: Array<{
+      name: string;
+      itemType: 'skill' | 'feat' | 'specialization' | 'metatype';
+      description?: string;
+      system?: Record<string, unknown>;
+      img?: string;
+    }>;
+    /** Shorthand for skill values: { "Conduite": 3, "Pistolets": 4 }. Creates skill items and adds them to the actor. */
+    skills?: Record<string, number>;
+  }): Promise<{ id: string; name: string; type: string; itemsAdded: number }> {
+    this.validateFoundryState();
+    const systemId = (game as any).system?.id;
+    if (systemId !== 'sra2') {
+      throw new Error(`createSRA2ActorFromContent is only supported when the game system is SRA2. Current system: ${systemId || 'unknown'}`);
+    }
+
+    const permissionCheck = permissionManager.checkWritePermission('createActor', { quantity: 1 });
+    if (!permissionCheck.allowed) {
+      throw new Error(`${ERROR_MESSAGES.ACCESS_DENIED}: ${permissionCheck.reason}`);
+    }
+
+    const folderName = request.folderName ?? 'Foundry MCP SRA2';
+    const folderId = await this.getOrCreateFolder(folderName, 'Actor');
+
+    const system: any = { ...(request.system && typeof request.system === 'object' ? request.system : {}) };
+    if (request.biography != null && request.biography !== '' && request.actorType === 'character') {
+      const html = typeof request.biography === 'string' && !/^<[\s\S]*>/.test(request.biography.trim())
+        ? `<p>${String(request.biography).replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '</p><p>')}</p>`
+        : String(request.biography);
+      system.bio = system.bio ?? {};
+      (system.bio as any).background = html;
+      if ((system.bio as any).notes === undefined) (system.bio as any).notes = '';
+    }
+
+    const actorData: any = {
+      name: (request.name ?? '').trim() || 'Unnamed',
+      type: request.actorType,
+      img: undefined,
+      system,
+      folder: folderId ?? undefined,
+    };
+
+    const created = await Actor.createDocuments([actorData]);
+    if (!created?.length) throw new Error('Failed to create SRA2 actor');
+    const actor = created[0] as any;
+    let itemsAdded = 0;
+
+    try {
+      if (request.itemIds && request.itemIds.length > 0) {
+        const itemWorld = (game as any).items;
+        for (const itemId of request.itemIds) {
+          const item = itemWorld?.get(itemId);
+          if (!item) continue;
+          const data = item.toObject();
+          delete (data as any)._id;
+          delete (data as any).folder;
+          const embedded = await actor.createEmbeddedDocuments('Item', [data]);
+          if (embedded?.length) itemsAdded += embedded.length;
+        }
+      }
+
+      if (request.items && request.items.length > 0) {
+        for (const it of request.items) {
+          const itemData: any = {
+            name: (it.name ?? '').trim() || 'Unnamed',
+            type: it.itemType,
+            img: it.img ?? undefined,
+            system: it.system && typeof it.system === 'object' ? { ...it.system } : {},
+          };
+          if (it.description != null && it.description !== '') (itemData.system as any).description = it.description;
+          const embedded = await actor.createEmbeddedDocuments('Item', [itemData]);
+          if (embedded?.length) itemsAdded += embedded.length;
+        }
+      }
+
+      if (request.skills && typeof request.skills === 'object' && Object.keys(request.skills).length > 0) {
+        for (const [skillName, value] of Object.entries(request.skills)) {
+          if (skillName === '' || value == null) continue;
+          const itemData: any = {
+            name: skillName.trim() || 'Unnamed',
+            type: 'skill',
+            system: { value: Number(value) || 0 },
+          };
+          const embedded = await actor.createEmbeddedDocuments('Item', [itemData]);
+          if (embedded?.length) itemsAdded += embedded.length;
+        }
+      }
+
+      if (request.addToScene) {
+        const scenePermissionCheck = permissionManager.checkWritePermission('modifyScene', { targetIds: [actor.id] });
+        if (scenePermissionCheck.allowed) {
+          await this.addActorsToScene({ actorIds: [actor.id], placement: 'random', hidden: false });
+        }
+      }
+    } catch (e) {
+      this.auditLog('createSRA2ActorFromContent', request, 'failure', e instanceof Error ? e.message : 'Unknown error');
+      throw e;
+    }
+
+    this.auditLog('createSRA2ActorFromContent', request, 'success');
+    return { id: actor.id, name: actor.name, type: actor.type, itemsAdded };
+  }
+
+  /**
    * Create a new SRA2 actor in the world (character, vehicle, or ice).
    * Only available when game system is sra2. Uses minimal data; SRA2 system fills defaults.
    * @see https://github.com/VincentVk9373/sra2
@@ -3793,54 +3912,19 @@ export class FoundryDataAccess {
     actorType: 'character' | 'vehicle' | 'ice';
     folderName?: string;
     addToScene?: boolean;
-    /** Description/biography for the actor. For SRA2 characters this is stored in system.bio.background (HTML). */
     biography?: string;
   }): Promise<{ id: string; name: string; type: string }> {
-    this.validateFoundryState();
-    const systemId = (game as any).system?.id;
-    if (systemId !== 'sra2') {
-      throw new Error(`createSRA2Actor is only supported when the game system is SRA2. Current system: ${systemId || 'unknown'}`);
-    }
-
-    const permissionCheck = permissionManager.checkWritePermission('createActor', { quantity: 1 });
-    if (!permissionCheck.allowed) {
-      throw new Error(`${ERROR_MESSAGES.ACCESS_DENIED}: ${permissionCheck.reason}`);
-    }
-
-    const folderName = request.folderName || 'Foundry MCP SRA2';
-    const folderId = await this.getOrCreateFolder(folderName, 'Actor');
-
-    const system: any = {};
-    if (request.biography != null && request.biography !== '' && request.actorType === 'character') {
-      const html = typeof request.biography === 'string' && !/^<[\s\S]*>/.test(request.biography.trim())
-        ? `<p>${String(request.biography).replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '</p><p>')}</p>`
-        : String(request.biography);
-      system.bio = { background: html, notes: '' };
-    }
-
-    const actorData: any = {
-      name: request.name.trim() || 'Unnamed',
-      type: request.actorType,
-      img: undefined,
-      system,
-      folder: folderId || undefined,
-    };
-
-    const created = await Actor.createDocuments([actorData]);
-    if (!created?.length) throw new Error('Failed to create SRA2 actor');
-
-    const actor = created[0];
-    if (request.addToScene) {
-      try {
-        const scenePermissionCheck = permissionManager.checkWritePermission('modifyScene', { targetIds: [actor.id] });
-        if (scenePermissionCheck.allowed) {
-          await this.addActorsToScene({ actorIds: [actor.id], placement: 'random', hidden: false });
-        }
-      } catch (_) { /* ignore */ }
-    }
-
-    this.auditLog('createSRA2Actor', request, 'success');
-    return { id: actor.id, name: actor.name, type: (actor as any).type };
+    const payload: {
+      name: string;
+      actorType: 'character' | 'vehicle' | 'ice';
+      folderName?: string;
+      addToScene?: boolean;
+      biography?: string;
+    } = { name: request.name, actorType: request.actorType, addToScene: request.addToScene ?? false };
+    if (request.folderName !== undefined) payload.folderName = request.folderName;
+    if (request.biography !== undefined) payload.biography = request.biography;
+    const result = await this.createSRA2ActorFromContent(payload);
+    return { id: result.id, name: result.name, type: result.type };
   }
 
   /**
