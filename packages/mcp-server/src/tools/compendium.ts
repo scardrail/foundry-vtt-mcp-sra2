@@ -242,6 +242,25 @@ export class CompendiumTools {
           },
         },
       },
+      {
+        name: 'list-compendium-items',
+        description: 'List all documents (items, actors, etc.) in a given compendium pack. Use this when you need the complete list for a pack (e.g. world.armes-sra, world.atouts-sra) without name-based search. Returns id, name, type, and pack info for each entry.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            packId: {
+              type: 'string',
+              description: 'ID of the compendium pack (e.g. "world.armes-sra", "world.atouts-sra"). Use list-compendium-packs to discover pack IDs.',
+            },
+            limit: {
+              type: 'number',
+              description: 'Optional maximum number of results to return. If omitted, all items in the pack are returned.',
+              minimum: 1,
+            },
+          },
+          required: ['packId'],
+        },
+      },
     ];
   }
 
@@ -571,6 +590,33 @@ export class CompendiumTools {
     } catch (error) {
       this.logger.error('Failed to list compendium packs', error);
       throw new Error(`Failed to list compendium packs: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async handleListCompendiumItems(args: any): Promise<any> {
+    const schema = z.object({
+      packId: z.string().min(1, 'Pack ID cannot be empty'),
+      limit: z.number().min(1).optional(),
+    });
+    const { packId, limit } = schema.parse(args);
+    this.logger.info('Listing compendium pack contents', { packId, limit });
+    try {
+      const results = await this.foundryClient.query('foundry-mcp-bridge.listCompendiumPackContents', { packId });
+      const gameSystem = await this.getGameSystem();
+      const formatted = (results as any[]).map((item: any) => this.formatCompendiumItem(item, gameSystem));
+      const limited = limit !== undefined ? formatted.slice(0, limit) : formatted;
+      const firstRaw = (results as any[])[0];
+      return {
+        packId,
+        packLabel: firstRaw?.packLabel ?? packId,
+        total: formatted.length,
+        showing: limited.length,
+        hasMore: limit !== undefined && formatted.length > limit,
+        items: limited,
+      };
+    } catch (error) {
+      this.logger.error('Failed to list compendium items', error);
+      throw new Error(`Failed to list compendium items: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 

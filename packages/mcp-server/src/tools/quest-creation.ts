@@ -168,8 +168,92 @@ export class QuestCreationTools {
           },
           required: ['searchQuery']
         }
+      },
+      {
+        name: 'create-journal-entry',
+        description: 'Create a simple journal entry with a name, content, and optional folder (e.g. for NPC bios in a "pnj" folder).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Title of the journal entry (e.g. character name)' },
+            content: { type: 'string', description: 'HTML or plain text content of the journal' },
+            folderName: { type: 'string', description: 'Folder name to create the journal in (e.g. "pnj"); folder is created if missing' }
+          },
+          required: ['name', 'content']
+        }
+      },
+      {
+        name: 'update-journal-content',
+        description: 'Replace the full content of an existing journal entry (e.g. to correct or expand a character bio).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            journalId: { type: 'string', description: 'ID of the journal entry to update' },
+            content: { type: 'string', description: 'New full HTML or plain text content' }
+          },
+          required: ['journalId', 'content']
+        }
       }
     ];
+  }
+
+  /**
+   * Handle create simple journal entry (e.g. NPC bio in folder pnj)
+   */
+  async handleCreateJournalEntry(args: any): Promise<any> {
+    try {
+      const requestSchema = z.object({
+        name: z.string().min(1, 'name is required'),
+        content: z.string().min(1, 'content is required'),
+        folderName: z.string().optional(),
+      });
+      const { name, content, folderName } = requestSchema.parse(args);
+      const result = await this.foundryClient.query('foundry-mcp-bridge.createJournalEntry', {
+        name,
+        content,
+        ...(folderName != null && folderName !== '' ? { folderName } : {}),
+      });
+      if (!result || result.error) {
+        throw new Error(result?.error || 'Failed to create journal entry');
+      }
+      return {
+        success: true,
+        journalId: result.id,
+        journalName: result.name,
+        message: folderName
+          ? `Journal "${name}" créé dans le dossier "${folderName}".`
+          : `Journal "${name}" créé.`,
+      };
+    } catch (error) {
+      this.errorHandler.handleToolError(error, 'create-journal-entry', 'journal creation');
+    }
+  }
+
+  /**
+   * Handle update journal content (full replace)
+   */
+  async handleUpdateJournalContent(args: any): Promise<any> {
+    try {
+      const requestSchema = z.object({
+        journalId: z.string().min(1, 'journalId is required'),
+        content: z.string().min(1, 'content is required'),
+      });
+      const { journalId, content } = requestSchema.parse(args);
+      const result = await this.foundryClient.query('foundry-mcp-bridge.updateJournalContent', {
+        journalId,
+        content,
+      });
+      if (!result || result.error) {
+        throw new Error(result?.error || 'Failed to update journal content');
+      }
+      return {
+        success: true,
+        journalId,
+        message: 'Contenu du journal mis à jour.',
+      };
+    } catch (error) {
+      this.errorHandler.handleToolError(error, 'update-journal-content', 'journal update');
+    }
   }
 
   /**

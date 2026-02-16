@@ -89,6 +89,18 @@ Add this to your Claude Desktop configuration (claude_desktop_config.json) file:
 
 Starting Claude Desktop will start the MCP Server.
 
+#### Recharger le serveur MCP (nouveaux outils)
+
+Après avoir modifié le code du serveur MCP ou mis à jour le projet, les nouveaux outils (ex. `list-compendium-items`) ne sont visibles qu’après redémarrage du serveur :
+
+- **Cursor**  
+  1. `Ctrl+Shift+P` (ou `Cmd+Shift+P` sur Mac) → taper **« MCP »** ou **« Reload »**.  
+  2. Choisir **« MCP: Restart MCP Servers »** ou **« Developer: Reload Window »** pour recharger la fenêtre (recommandé si les outils n’apparaissent pas).
+- **Claude Desktop**  
+  Fermer puis rouvrir Claude Desktop pour relancer le serveur MCP.
+- **En ligne de commande**  
+  Si tu lances le serveur à la main (`node …/dist/index.js`), arrêter le processus puis le relancer après un `npm run build` dans `packages/mcp-server`.
+
 ### Getting Started
 
 1. Start Foundry VTT and load your world

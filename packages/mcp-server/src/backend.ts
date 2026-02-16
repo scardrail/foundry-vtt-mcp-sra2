@@ -1457,6 +1457,12 @@ async function startBackend(): Promise<void> {
 
                   break;
 
+                case 'list-compendium-items':
+
+                  result = await compendiumTools.handleListCompendiumItems(args);
+
+                  break;
+
                 // Scene tools
 
                 case 'get-current-scene':
@@ -1497,6 +1503,12 @@ async function startBackend(): Promise<void> {
 
                   break;
 
+                case 'update-sra2-actor-biography':
+
+                  result = await actorCreationTools.handleUpdateSRA2ActorBiography(args);
+
+                  break;
+
                 // DSA5 character creation tools
 
                 case 'create-dsa5-character-from-archetype':
@@ -1512,6 +1524,18 @@ async function startBackend(): Promise<void> {
                   break;
 
                 // Quest creation tools
+
+                case 'create-journal-entry':
+
+                  result = await questCreationTools.handleCreateJournalEntry(args);
+
+                  break;
+
+                case 'update-journal-content':
+
+                  result = await questCreationTools.handleUpdateJournalContent(args);
+
+                  break;
 
                 case 'create-quest-journal':
 

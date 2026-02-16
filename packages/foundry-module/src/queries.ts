@@ -36,6 +36,7 @@ export class QueryHandlers {
     CONFIG.queries[`${modulePrefix}.searchCompendium`] = this.handleSearchCompendium.bind(this);
     CONFIG.queries[`${modulePrefix}.listCreaturesByCriteria`] = this.handleListCreaturesByCriteria.bind(this);
     CONFIG.queries[`${modulePrefix}.getAvailablePacks`] = this.handleGetAvailablePacks.bind(this);
+    CONFIG.queries[`${modulePrefix}.listCompendiumPackContents`] = this.handleListCompendiumPackContents.bind(this);
 
     // Scene queries
     CONFIG.queries[`${modulePrefix}.getActiveScene`] = this.handleGetActiveScene.bind(this);
@@ -53,6 +54,7 @@ export class QueryHandlers {
     CONFIG.queries[`${modulePrefix}.getCompendiumDocumentFull`] = this.handleGetCompendiumDocumentFull.bind(this);
     CONFIG.queries[`${modulePrefix}.createSRA2Actor`] = this.handleCreateSRA2Actor.bind(this);
     CONFIG.queries[`${modulePrefix}.createSRA2Item`] = this.handleCreateSRA2Item.bind(this);
+    CONFIG.queries[`${modulePrefix}.updateSRA2ActorBiography`] = this.handleUpdateSRA2ActorBiography.bind(this);
     CONFIG.queries[`${modulePrefix}.addActorsToScene`] = this.handleAddActorsToScene.bind(this);
     CONFIG.queries[`${modulePrefix}.validateWritePermissions`] = this.handleValidateWritePermissions.bind(this);
     CONFIG.queries[`${modulePrefix}.createJournalEntry`] = this.handleCreateJournalEntry.bind(this);
@@ -283,6 +285,25 @@ export class QueryHandlers {
   }
 
   /**
+   * Handle list all items/documents in a compendium pack
+   */
+  private async handleListCompendiumPackContents(data: { packId: string }): Promise<any> {
+    try {
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+      this.dataAccess.validateFoundryState();
+      if (!data?.packId || typeof data.packId !== 'string') {
+        throw new Error('packId is required and must be a string');
+      }
+      return await this.dataAccess.listCompendiumPackContents(data.packId);
+    } catch (error) {
+      throw new Error(`Failed to list compendium pack contents: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
    * Handle get active scene request
    */
   private async handleGetActiveScene(): Promise<any> {
@@ -432,18 +453,20 @@ export class QueryHandlers {
     actorType: 'character' | 'vehicle' | 'ice';
     folderName?: string;
     addToScene?: boolean;
+    biography?: string;
   }): Promise<{ id: string; name: string; type: string }> {
     const gmCheck = this.validateGMAccess();
     if (!gmCheck.allowed) throw new Error('Access denied');
     this.dataAccess.validateFoundryState();
     if (!data.name?.trim()) throw new Error('name is required');
     if (!['character', 'vehicle', 'ice'].includes(data.actorType)) throw new Error('actorType must be character, vehicle, or ice');
-    const request: { name: string; actorType: 'character' | 'vehicle' | 'ice'; folderName?: string; addToScene?: boolean } = {
+    const request: { name: string; actorType: 'character' | 'vehicle' | 'ice'; folderName?: string; addToScene?: boolean; biography?: string } = {
       name: data.name,
       actorType: data.actorType,
       addToScene: data.addToScene ?? false,
     };
     if (data.folderName !== undefined) request.folderName = data.folderName;
+    if (data.biography !== undefined && data.biography !== '') request.biography = data.biography;
     return await this.dataAccess.createSRA2Actor(request);
   }
 
@@ -468,6 +491,18 @@ export class QueryHandlers {
     if (data.actorId !== undefined) request.actorId = data.actorId;
     if (data.folderName !== undefined) request.folderName = data.folderName;
     return await this.dataAccess.createSRA2Item(request);
+  }
+
+  /**
+   * Handle update SRA2 actor biography
+   */
+  private async handleUpdateSRA2ActorBiography(data: { actorId: string; biography: string }): Promise<{ id: string; name: string }> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) throw new Error('Access denied');
+    this.dataAccess.validateFoundryState();
+    if (!data.actorId?.trim()) throw new Error('actorId is required');
+    if (data.biography == null) throw new Error('biography is required');
+    return await this.dataAccess.updateSRA2ActorBiography(data.actorId, data.biography);
   }
 
   /**
@@ -547,6 +582,7 @@ export class QueryHandlers {
       return await this.dataAccess.createJournalEntry({
         name: data.name,
         content: data.content,
+        ...(data.folderName != null && data.folderName !== '' ? { folderName: data.folderName } : {}),
       });
     } catch (error) {
       throw new Error(`Failed to create journal entry: ${error instanceof Error ? error.message : 'Unknown error'}`);

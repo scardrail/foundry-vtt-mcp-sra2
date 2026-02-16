@@ -3094,6 +3094,36 @@ export class FoundryDataAccess {
   }
 
   /**
+   * List all documents (items/actors/…) in a compendium pack by pack ID.
+   * Use this to get a complete list without name-based search (e.g. all items in world.armes-sra).
+   */
+  async listCompendiumPackContents(packId: string): Promise<CompendiumSearchResult[]> {
+    if (!packId || typeof packId !== 'string' || !packId.trim()) {
+      throw new Error('packId is required and must be a non-empty string');
+    }
+    const pack = game.packs.get(packId.trim());
+    if (!pack) {
+      throw new Error(`Compendium pack not found: ${packId}`);
+    }
+    if (!pack.indexed) {
+      await pack.getIndex({});
+    }
+    const entries = Array.from(pack.index.values());
+    const typedEntries = entries as Array<{ _id?: string; name?: string; type?: string; img?: string; [key: string]: unknown }>;
+    return typedEntries.map((entry) => ({
+      id: entry._id ?? '',
+      name: entry.name ?? '(sans nom)',
+      type: entry.type ?? 'unknown',
+      ...(entry.img ? { img: entry.img } : {}),
+      pack: pack.metadata.id,
+      packLabel: pack.metadata.label,
+      description: typeof entry.description === 'string' ? entry.description : '',
+      hasImage: !!entry.img,
+      summary: `${entry.type ?? 'unknown'} from ${pack.metadata.label}`,
+    }));
+  }
+
+  /**
    * Sanitize data to remove sensitive information and make it JSON-safe
    */
   private sanitizeData(data: any): any {
@@ -3750,6 +3780,8 @@ export class FoundryDataAccess {
     actorType: 'character' | 'vehicle' | 'ice';
     folderName?: string;
     addToScene?: boolean;
+    /** Description/biography for the actor. For SRA2 characters this is stored in system.bio.background (HTML). */
+    biography?: string;
   }): Promise<{ id: string; name: string; type: string }> {
     this.validateFoundryState();
     const systemId = (game as any).system?.id;
@@ -3765,11 +3797,19 @@ export class FoundryDataAccess {
     const folderName = request.folderName || 'Foundry MCP SRA2';
     const folderId = await this.getOrCreateFolder(folderName, 'Actor');
 
+    const system: any = {};
+    if (request.biography != null && request.biography !== '' && request.actorType === 'character') {
+      const html = typeof request.biography === 'string' && !/^<[\s\S]*>/.test(request.biography.trim())
+        ? `<p>${String(request.biography).replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '</p><p>')}</p>`
+        : String(request.biography);
+      system.bio = { background: html, notes: '' };
+    }
+
     const actorData: any = {
       name: request.name.trim() || 'Unnamed',
       type: request.actorType,
       img: undefined,
-      system: {},
+      system,
       folder: folderId || undefined,
     };
 
@@ -3788,6 +3828,30 @@ export class FoundryDataAccess {
 
     this.auditLog('createSRA2Actor', request, 'success');
     return { id: actor.id, name: actor.name, type: (actor as any).type };
+  }
+
+  /**
+   * Update an SRA2 character's biography (system.bio.background). Only for type character.
+   */
+  async updateSRA2ActorBiography(actorId: string, biography: string): Promise<{ id: string; name: string }> {
+    this.validateFoundryState();
+    const systemId = (game as any).system?.id;
+    if (systemId !== 'sra2') throw new Error('updateSRA2ActorBiography is only supported when the game system is SRA2');
+
+    const permissionCheck = permissionManager.checkWritePermission('createActor', { quantity: 1 });
+    if (!permissionCheck.allowed) throw new Error(`${ERROR_MESSAGES.ACCESS_DENIED}: ${permissionCheck.reason}`);
+
+    const actor = (game as any).actors?.get(actorId);
+    if (!actor) throw new Error(`Actor "${actorId}" not found`);
+    if ((actor as any).type !== 'character') throw new Error('Biography can only be set on character actors');
+
+    const html = typeof biography === 'string' && !/^<[\s\S]*>/.test(biography.trim())
+      ? `<p>${String(biography).replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '</p><p>')}</p>`
+      : String(biography);
+
+    await actor.update({ 'system.bio.background': html });
+    this.auditLog('updateSRA2ActorBiography', { actorId }, 'success');
+    return { id: actor.id, name: actor.name };
   }
 
   /**

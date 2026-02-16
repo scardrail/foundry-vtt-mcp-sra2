@@ -127,6 +127,10 @@ export class ActorCreationTools {
               description: 'If true, add the new actor to the current scene as a token',
               default: false,
             },
+            biography: {
+              type: 'string',
+              description: 'Optional description/biography for the character (stored in SRA2 "Bio" / Identity section, system.bio.background)',
+            },
           },
           required: ['name', 'actorType'],
         },
@@ -156,6 +160,18 @@ export class ActorCreationTools {
             },
           },
           required: ['name', 'itemType'],
+        },
+      },
+      {
+        name: 'update-sra2-actor-biography',
+        description: 'Update the biography/description of an existing SRA2 character (system.bio.background). Use findActor or list-characters to get actor id.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            actorId: { type: 'string', description: 'ID of the SRA2 character actor' },
+            biography: { type: 'string', description: 'New biography text (plain text or HTML)' },
+          },
+          required: ['actorId', 'biography'],
         },
       },
     ];
@@ -270,14 +286,16 @@ export class ActorCreationTools {
       actorType: z.enum(['character', 'vehicle', 'ice']),
       folderName: z.string().optional(),
       addToScene: z.boolean().default(false),
+      biography: z.string().optional(),
     });
-    const { name, actorType, folderName, addToScene } = schema.parse(args);
+    const { name, actorType, folderName, addToScene, biography } = schema.parse(args);
     try {
       const result = await this.foundryClient.query('foundry-mcp-bridge.createSRA2Actor', {
         name,
         actorType,
         folderName,
         addToScene,
+        ...(biography != null && biography !== '' ? { biography } : {}),
       });
       this.logger.info('Created SRA2 actor', { id: result.id, name: result.name, type: result.type });
       return {
@@ -317,6 +335,31 @@ export class ActorCreationTools {
       };
     } catch (error) {
       this.errorHandler.handleToolError(error, 'create-sra2-item', 'SRA2 item creation');
+    }
+  }
+
+  /**
+   * Update SRA2 actor biography
+   */
+  async handleUpdateSRA2ActorBiography(args: any): Promise<any> {
+    const schema = z.object({
+      actorId: z.string().min(1, 'actorId is required'),
+      biography: z.string().min(1, 'biography is required'),
+    });
+    const { actorId, biography } = schema.parse(args);
+    try {
+      const result = await this.foundryClient.query('foundry-mcp-bridge.updateSRA2ActorBiography', {
+        actorId,
+        biography,
+      });
+      this.logger.info('Updated SRA2 actor biography', { id: result.id, name: result.name });
+      return {
+        success: true,
+        actor: result,
+        message: `Bio mise à jour pour **${result.name}** (id: ${result.id}). Consulte la section Identity/Bio sur sa fiche.`,
+      };
+    } catch (error) {
+      this.errorHandler.handleToolError(error, 'update-sra2-actor-biography', 'SRA2 biography update');
     }
   }
 
