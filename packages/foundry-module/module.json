@@ -1,7 +1,7 @@
 {
   "id": "foundry-mcp-bridge",
-  "title": "Foundry MCP Bridge",
-  "description": "Connect Foundry VTT to AI models through MCP protocol. Enable AI-powered actor creation, intelligent compendium search, campaign analysis, and interactive dice roll coordination. Supports Claude, local LLMs, and future AI models with comprehensive GM-only security.",
+  "title": "Foundry MCP Bridge SRA2",
+  "description": "Connect Foundry VTT to AI models through MCP protocol. Fork with Shadowrun Anarchy 2 (SRA2) support alongside D&D 5e and Pathfinder 2e. AI-powered actor creation, compendium search, campaign analysis, dice rolls. GM-only security.",
   "version": "0.6.3",
   "compatibility": {
     "minimum": "13",

@@ -38,7 +38,7 @@
       "connected": "MCP Bridge connected successfully to external server",
       "disconnected": "MCP Bridge disconnected from external server", 
       "connectionFailed": "Failed to connect MCP Bridge to external server",
-      "initializationFailed": "Failed to initialize Foundry MCP Bridge module",
+      "initializationFailed": "Failed to initialize Foundry MCP Bridge SRA2 module",
       "settingsReset": "MCP Bridge settings have been reset to defaults",
       "invalidSettings": "MCP Bridge settings validation failed",
       "permissionDenied": "Access denied - this feature is disabled in module settings"

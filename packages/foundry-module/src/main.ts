@@ -7,7 +7,7 @@ import { ComfyUIManager } from './comfyui-manager.js';
 // Connection control now handled through settings menu
 
 /**
- * Main Foundry MCP Bridge Module Class
+ * Foundry MCP Bridge SRA2 Module Class
  */
 class FoundryMCPBridge {
   private settings: ModuleSettings;
@@ -39,7 +39,7 @@ class FoundryMCPBridge {
    */
   async initialize(): Promise<void> {
     try {
-      console.log(`[${MODULE_ID}] Initializing Foundry MCP Bridge...`);
+      console.log(`[${MODULE_ID}] Initializing Foundry MCP Bridge SRA2...`);
 
       // Register module settings
       this.settings.registerSettings();
@@ -58,7 +58,7 @@ class FoundryMCPBridge {
 
     } catch (error) {
       console.error(`[${MODULE_ID}] Failed to initialize:`, error);
-      ui.notifications.error('Failed to initialize Foundry MCP Bridge');
+      ui.notifications.error('Failed to initialize Foundry MCP Bridge SRA2');
       throw error;
     }
   }

@@ -1,10 +1,10 @@
-// Constants for Foundry MCP Bridge Module
+// Constants for Foundry MCP Bridge SRA2 Module
 
 /**
  * Module constants
  */
 export const MODULE_ID = 'foundry-mcp-bridge';
-export const MODULE_TITLE = 'Foundry MCP Bridge';
+export const MODULE_TITLE = 'Foundry MCP Bridge SRA2';
 
 /**
  * Socket event names

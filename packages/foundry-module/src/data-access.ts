@@ -5074,7 +5074,7 @@ export class FoundryDataAccess {
       let description = '';
       if (type === 'Actor') {
         if (folderName === 'Foundry MCP Creatures') {
-          description = 'Creatures and monsters created via Foundry MCP Bridge';
+          description = 'Creatures and monsters created via Foundry MCP Bridge SRA2';
         } else {
           description = `NPCs and creatures related to: ${folderName}`;
         }
