@@ -583,6 +583,7 @@ export class QueryHandlers {
         name: data.name,
         content: data.content,
         ...(data.folderName != null && data.folderName !== '' ? { folderName: data.folderName } : {}),
+        ...(data.linkedActorId != null && data.linkedActorId !== '' ? { linkedActorId: data.linkedActorId } : {}),
       });
     } catch (error) {
       throw new Error(`Failed to create journal entry: ${error instanceof Error ? error.message : 'Unknown error'}`);

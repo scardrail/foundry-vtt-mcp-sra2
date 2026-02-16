@@ -171,13 +171,14 @@ export class QuestCreationTools {
       },
       {
         name: 'create-journal-entry',
-        description: 'Create a simple journal entry with a name, content, and optional folder (e.g. for NPC bios in a "pnj" folder).',
+        description: 'Create a simple journal entry with a name, content, and optional folder. If linkedActorId is set, the journal is placed in the same folder structure as that actor (e.g. PNJ/Ganger or PJ/TeamA).',
         inputSchema: {
           type: 'object',
           properties: {
             name: { type: 'string', description: 'Title of the journal entry (e.g. character name)' },
             content: { type: 'string', description: 'HTML or plain text content of the journal' },
-            folderName: { type: 'string', description: 'Folder name to create the journal in (e.g. "pnj"); folder is created if missing' }
+            folderName: { type: 'string', description: 'Folder name to create the journal in (e.g. "pnj"); ignored if linkedActorId is set' },
+            linkedActorId: { type: 'string', description: 'ID of the actor to mirror folder from (journal will be in same path, e.g. PNJ/Ganger or PJ/TeamA)' }
           },
           required: ['name', 'content']
         }
@@ -206,12 +207,14 @@ export class QuestCreationTools {
         name: z.string().min(1, 'name is required'),
         content: z.string().min(1, 'content is required'),
         folderName: z.string().optional(),
+        linkedActorId: z.string().optional(),
       });
-      const { name, content, folderName } = requestSchema.parse(args);
+      const { name, content, folderName, linkedActorId } = requestSchema.parse(args);
       const result = await this.foundryClient.query('foundry-mcp-bridge.createJournalEntry', {
         name,
         content,
         ...(folderName != null && folderName !== '' ? { folderName } : {}),
+        ...(linkedActorId != null && linkedActorId !== '' ? { linkedActorId } : {}),
       });
       if (!result || result.error) {
         throw new Error(result?.error || 'Failed to create journal entry');

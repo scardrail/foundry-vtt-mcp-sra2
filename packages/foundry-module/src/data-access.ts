@@ -3309,14 +3309,19 @@ export class FoundryDataAccess {
   // ===== PHASE 2 & 3: WRITE OPERATIONS =====
 
   /**
-   * Create journal entry for quests
+   * Create journal entry for quests or character descriptions.
+   * If linkedActorId is set, the journal is placed in the same folder structure as that actor (e.g. PNJ/Ganger or PJ/TeamA).
    */
-  async createJournalEntry(request: { name: string; content: string; folderName?: string }): Promise<{ id: string; name: string }> {
+  async createJournalEntry(request: {
+    name: string;
+    content: string;
+    folderName?: string;
+    linkedActorId?: string;
+  }): Promise<{ id: string; name: string }> {
     this.validateFoundryState();
 
-    // Use permission system for journal creation
     const permissionCheck = permissionManager.checkWritePermission('createActor', {
-      quantity: 1, // Treat journal creation similar to actor creation for permissions
+      quantity: 1,
     });
 
     if (!permissionCheck.allowed) {
@@ -3324,18 +3329,26 @@ export class FoundryDataAccess {
     }
 
     try {
-      // Create journal entry with proper Foundry v13 structure
+      let folderId: string | null = null;
+      if (request.linkedActorId) {
+        const actorPath = this.getActorFolderPath(request.linkedActorId);
+        if (actorPath) {
+          folderId = await this.getOrCreateFolderByPath(actorPath, 'JournalEntry');
+        }
+      }
+      if (folderId == null) {
+        folderId = await this.getOrCreateFolder(request.folderName || request.name, 'JournalEntry');
+      }
+
       const journalData = {
         name: request.name,
         pages: [{
           type: 'text',
-          name: 'Quest Details', // Use generic page name to avoid title repetition
-          text: {
-            content: request.content
-          }
+          name: 'Quest Details',
+          text: { content: request.content }
         }],
-        ownership: { default: 0 }, // GM only by default
-        folder: await this.getOrCreateFolder(request.folderName || request.name, 'JournalEntry')
+        ownership: { default: 0 },
+        folder: folderId
       };
 
       const journal = await JournalEntry.create(journalData);
@@ -5221,15 +5234,23 @@ export class FoundryDataAccess {
   }
 
   /**
-   * Get or create a folder for organizing MCP-generated content
+   * Get or create a folder for organizing MCP-generated content.
+   * @param folderName - Name of the folder
+   * @param type - Document type (Actor, JournalEntry, Item)
+   * @param parentId - Optional parent folder id for nested structure
    */
-  private async getOrCreateFolder(folderName: string, type: 'Actor' | 'JournalEntry' | 'Item'): Promise<string | null> {
+  private async getOrCreateFolder(
+    folderName: string,
+    type: 'Actor' | 'JournalEntry' | 'Item',
+    parentId?: string | null
+  ): Promise<string | null> {
     try {
-      // Look for existing folder
-      const existingFolder = game.folders?.find((f: any) => 
-        f.name === folderName && f.type === type
+      const parent = parentId ?? null;
+      // Look for existing folder (same name, type, and parent)
+      const existingFolder = game.folders?.find((f: any) =>
+        f.name === folderName && f.type === type && (f.parent ?? null) === parent
       );
-      
+
       if (existingFolder) {
         return existingFolder.id;
       }
@@ -5248,14 +5269,13 @@ export class FoundryDataAccess {
         description = `Quest and content for: ${folderName}`;
       }
 
-      // Create new folder
       const folderData = {
         name: folderName,
         type: type,
         description: description,
-        color: type === 'Actor' ? '#4a90e2' : type === 'Item' ? '#27ae60' : '#f39c12', // Blue actors, green items, orange journals
+        color: type === 'Actor' ? '#4a90e2' : type === 'Item' ? '#27ae60' : '#f39c12',
         sort: 0,
-        parent: null,
+        parent: parent,
         flags: {
           'foundry-mcp-bridge': {
             mcpGenerated: true,
@@ -5269,7 +5289,50 @@ export class FoundryDataAccess {
       return folder?.id || null;
     } catch (error) {
       console.warn(`[${this.moduleId}] Failed to create folder "${folderName}":`, error);
-      // Return null so items are created without folders rather than failing
+      return null;
+    }
+  }
+
+  /**
+   * Get or create a nested folder by path (e.g. "PNJ/Ganger" or "PJ/TeamA").
+   * Creates each segment under the previous one. Used to mirror Actor folder structure for JournalEntry.
+   */
+  private async getOrCreateFolderByPath(
+    folderPath: string,
+    type: 'Actor' | 'JournalEntry' | 'Item'
+  ): Promise<string | null> {
+    const parts = folderPath.split('/').map((p) => p.trim()).filter(Boolean);
+    if (parts.length === 0) return null;
+    let parentId: string | null = null;
+    for (const name of parts) {
+      const id = await this.getOrCreateFolder(name, type, parentId);
+      if (!id) return null;
+      parentId = id;
+    }
+    return parentId;
+  }
+
+  /**
+   * Get the folder path of an actor (e.g. "PNJ/Ganger" or "PJ/TeamA") for mirroring in JournalEntry.
+   * Returns null if actor has no folder or is not found.
+   */
+  getActorFolderPath(actorId: string): string | null {
+    try {
+      const actor = game.actors?.get(actorId);
+      if (!actor) return null;
+      const folderId = (actor as any).folder;
+      if (!folderId) return null;
+      const folder = game.folders?.get(folderId);
+      if (!folder) return null;
+      const pathParts: string[] = [];
+      let current: any = folder;
+      while (current) {
+        pathParts.unshift(current.name);
+        const parentId = current.parent ?? null;
+        current = parentId ? game.folders?.get(parentId) : null;
+      }
+      return pathParts.join('/');
+    } catch {
       return null;
     }
   }
