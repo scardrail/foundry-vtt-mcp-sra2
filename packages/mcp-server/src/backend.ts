@@ -1431,6 +1431,18 @@ async function startBackend(): Promise<void> {
 
                   break;
 
+                case 'export-actor-full-json':
+
+                  result = await characterTools.handleExportActorFullJson(args);
+
+                  break;
+
+                case 'export-all-actors-full-json':
+
+                  result = await characterTools.handleExportAllActorsFullJson(args);
+
+                  break;
+
                 // Compendium tools
 
                 case 'search-compendium':

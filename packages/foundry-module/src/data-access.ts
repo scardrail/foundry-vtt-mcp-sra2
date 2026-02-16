@@ -1319,22 +1319,57 @@ export class FoundryDataAccess {
 
 
   /**
+   * Resolve actor by identifier (ID or name). Returns undefined if not found.
+   */
+  private resolveActor(identifier: string): Actor | undefined {
+    if (identifier.length === 16) {
+      const byId = game.actors.get(identifier);
+      if (byId) return byId;
+    }
+    return game.actors.find((a: any) => a.name?.toLowerCase() === identifier.toLowerCase());
+  }
+
+  /**
+   * Export full actor data as plain JSON-serializable object (no filters).
+   * Uses Foundry's toObject(); includes system, items, effects, everything.
+   */
+  async getActorFullExport(identifier: string): Promise<Record<string, unknown>> {
+    this.validateFoundryState();
+    const actor = this.resolveActor(identifier);
+    if (!actor) throw new Error(`${ERROR_MESSAGES.CHARACTER_NOT_FOUND}: ${identifier}`);
+    const obj = (actor as any).toObject ? (actor as any).toObject() : { id: actor.id, name: actor.name, type: (actor as any).type };
+    return JSON.parse(JSON.stringify(obj)) as Record<string, unknown>;
+  }
+
+  /**
+   * Export all actors in the world as full JSON-serializable data (no filters).
+   */
+  async exportAllActorsFull(): Promise<{ exportedAt: string; world: { id: string; title: string }; actors: Record<string, unknown>[] }> {
+    this.validateFoundryState();
+    const world = (game as any).world;
+    const actors = (game as any).actors?.contents ?? [];
+    const exported: Record<string, unknown>[] = [];
+    for (const actor of actors) {
+      try {
+        const obj = (actor as any).toObject ? (actor as any).toObject() : { id: actor.id, name: actor.name, type: (actor as any).type };
+        exported.push(JSON.parse(JSON.stringify(obj)) as Record<string, unknown>);
+      } catch (_) {
+        exported.push({ id: (actor as any).id, name: (actor as any).name, type: (actor as any).type, _exportError: 'toObject failed' });
+      }
+    }
+    return {
+      exportedAt: new Date().toISOString(),
+      world: { id: world?.id ?? '', title: world?.title ?? '' },
+      actors: exported,
+    };
+  }
+
+  /**
    * Get character/actor information by name or ID
    */
   async getCharacterInfo(identifier: string): Promise<CharacterInfo> {
 
-    let actor: Actor | undefined;
-
-    // Try to find by ID first, then by name
-    if (identifier.length === 16) { // Foundry ID length
-      actor = game.actors.get(identifier);
-    }
-    
-    if (!actor) {
-      actor = game.actors.find(a => 
-        a.name?.toLowerCase() === identifier.toLowerCase()
-      );
-    }
+    const actor = this.resolveActor(identifier);
 
     if (!actor) {
       throw new Error(`${ERROR_MESSAGES.CHARACTER_NOT_FOUND}: ${identifier}`);

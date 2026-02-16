@@ -144,6 +144,28 @@ export class CharacterTools {
           required: ['characterIdentifier'],
         },
       },
+      {
+        name: 'export-actor-full-json',
+        description: 'Export one actor as full JSON with no filters: complete Foundry document (system, items, effects, etc.). Use for backup or import elsewhere. Identifier: actor name or ID.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            identifier: {
+              type: 'string',
+              description: 'Actor name or ID to export',
+            },
+          },
+          required: ['identifier'],
+        },
+      },
+      {
+        name: 'export-all-actors-full-json',
+        description: 'Export all actors in the world as full JSON with no filters. Returns { exportedAt, world, actors } where each actor is the complete Foundry document. Use for full backup.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        },
+      },
     ];
   }
 
@@ -172,6 +194,32 @@ export class CharacterTools {
     } catch (error) {
       this.logger.error('Failed to get character information', error);
       throw new Error(`Failed to retrieve character "${identifier}": ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async handleExportActorFullJson(args: any): Promise<any> {
+    const schema = z.object({
+      identifier: z.string().min(1, 'identifier is required'),
+    });
+    const { identifier } = schema.parse(args);
+    this.logger.info('Exporting actor full JSON', { identifier });
+    try {
+      const data = await this.foundryClient.query('foundry-mcp-bridge.exportActorFull', { identifier });
+      return data;
+    } catch (error) {
+      this.logger.error('Failed to export actor full JSON', error);
+      throw new Error(`Failed to export actor "${identifier}": ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async handleExportAllActorsFullJson(args: any): Promise<any> {
+    this.logger.info('Exporting all actors full JSON');
+    try {
+      const data = await this.foundryClient.query('foundry-mcp-bridge.exportAllActorsFull', {});
+      return data;
+    } catch (error) {
+      this.logger.error('Failed to export all actors full JSON', error);
+      throw new Error(`Failed to export all actors: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 

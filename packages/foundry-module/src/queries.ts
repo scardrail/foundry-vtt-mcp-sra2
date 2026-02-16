@@ -30,6 +30,8 @@ export class QueryHandlers {
 
     // Character/Actor queries
     CONFIG.queries[`${modulePrefix}.getCharacterInfo`] = this.handleGetCharacterInfo.bind(this);
+    CONFIG.queries[`${modulePrefix}.exportActorFull`] = this.handleExportActorFull.bind(this);
+    CONFIG.queries[`${modulePrefix}.exportAllActorsFull`] = this.handleExportAllActorsFull.bind(this);
     CONFIG.queries[`${modulePrefix}.listActors`] = this.handleListActors.bind(this);
 
     // Compendium queries
@@ -167,6 +169,27 @@ export class QueryHandlers {
     } catch (error) {
       throw new Error(`Failed to get character info: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
+
+  /**
+   * Handle export single actor full JSON (no filters)
+   */
+  private async handleExportActorFull(data: { identifier: string }): Promise<Record<string, unknown>> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) throw new Error('Access denied');
+    this.dataAccess.validateFoundryState();
+    if (!data.identifier?.trim()) throw new Error('identifier is required');
+    return await this.dataAccess.getActorFullExport(data.identifier.trim());
+  }
+
+  /**
+   * Handle export all actors full JSON (no filters)
+   */
+  private async handleExportAllActorsFull(): Promise<{ exportedAt: string; world: { id: string; title: string }; actors: Record<string, unknown>[] }> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) throw new Error('Access denied');
+    this.dataAccess.validateFoundryState();
+    return await this.dataAccess.exportAllActorsFull();
   }
 
   /**
